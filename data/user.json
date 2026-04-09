@@ -1,0 +1,30 @@
+{
+  "name": "Param Barodia",
+  "first_name": "Param",
+  "age": 23,
+  "city": "Ahmedabad, India",
+  "role": "Research Scientist & Co-founder, Satani Research Centre",
+  "projects": [
+    "Satani Research Centre — biohybrid neurons + AI research",
+    "ClinomicLabs — clinical AI SaaS, in production with 1 pilot",
+    "Jarvis — this personal AI assistant",
+    "Website builds for friends",
+    "Remotion-based reel editor (half-built)"
+  ],
+  "ambitions": [
+    "Financial and intellectual freedom",
+    "Build at Elon Musk scale",
+    "Contribute to neuroscience-AI intersection"
+  ],
+  "personality_notes": [
+    "Wants brutal honesty, not validation",
+    "Frustrated by context switching and decision paralysis",
+    "Researcher background in neuroscience",
+    "Prefers structured responses, decisions over options"
+  ],
+  "preferences": {
+    "address_as": "Sir",
+    "occasional_alt": "Param",
+    "tone": "formal, precise, eloquently dry, highly analytical, subtly sarcastic"
+  }
+}
