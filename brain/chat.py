@@ -1,121 +1,117 @@
-"""Ollama integration and streaming chat for Jarvis brain."""
+"""Nexus chat engine: routing, memory, and multi-tier execution."""
 
 import json
 import logging
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, List
 
 import ollama
-
-from brain.memory import append, get_recent
+from brain.memory import append as log_backup
+from brain.memory_mem0 import add_memory, get_memories
 from brain.prompt import build_system_prompt
-from brain.tools import TOOL_DEFINITIONS, execute_tool
+from brain.router import classify_message
+from brain.models import get_model_for_tier
+from brain.mcp_client import mcp
 
 logger = logging.getLogger("jarvis.chat")
 
-MODEL = "gemma4:e4b"
-
-
-async def stream_chat(user_message: str) -> AsyncIterator[dict[str, Any]]:
-    """Stream a chat response, handling tool calls as they arise."""
-    # Save user message to memory
-    append("user", user_message)
-
-    # Build messages: system + recent memory + current message
-    system_prompt = build_system_prompt()
-    history = get_recent(n=20)
-    messages: list[dict[str, Any]] = [
-        {"role": "system", "content": system_prompt},
-    ]
-    # Add history (excluding the last user message since we add it explicitly)
-    if history and history[-1]["role"] == "user" and history[-1]["content"] == user_message:
-        messages.extend(history[:-1])
+async def stream_chat(user_message: str, force_tier: int = None) -> AsyncIterator[dict[str, Any]]:
+    """Nexus chat flow: Router -> Tier -> Tools -> Mem0."""
+    
+    # 1. Routing
+    if force_tier:
+        decision = {"tier": force_tier, "confidence": 1.0, "reason": "Explicitly requested by user."}
     else:
-        messages.extend(history)
-    messages.append({"role": "user", "content": user_message})
+        decision = classify_message(user_message)
+    
+    tier = decision["tier"]
+    model_cfg = get_model_for_tier(tier)
+    
+    yield {"type": "routing", "tier": tier, "reason": decision["reason"]}
+    logger.info("Routing: Tier %d (%s)", tier, model_cfg.model_name)
 
-    # First call — with tools, non-streaming (need to check for tool calls)
+    # 2. Context Building (Mem0 Inject)
+    memories = get_memories(user_message)
+    system_prompt = build_system_prompt()
+    if memories:
+        system_prompt += "\n# Relevant Background (Memory)\n" + "\n".join(f"- {m}" for m in memories)
+
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_message}
+    ]
+
+    # 3. Execution (Ollama / Anthropic)
     try:
-        response = ollama.chat(
-            model=MODEL,
-            messages=messages,
-            tools=TOOL_DEFINITIONS,
-            stream=False,
-        )
-    except Exception as e:
-        logger.error("Ollama chat failed: %s", e)
-        error_msg = f"I'm afraid I encountered a system error, Sir: {e}"
-        append("assistant", error_msg)
-        yield {"type": "text", "content": error_msg}
-        yield {"type": "done"}
-        return
-
-    message = response.get("message", {})
-    tool_calls = message.get("tool_calls", None)
-
-    # Handle tool calls if present
-    if tool_calls:
-        messages.append(message)
-
-        for tc in tool_calls:
-            func_info = tc.get("function", {})
-            tool_name = func_info.get("name", "unknown")
-            tool_args = func_info.get("arguments", {})
-
-            logger.info("Tool call: %s(%s)", tool_name, json.dumps(tool_args))
-            yield {"type": "tool_call", "tool": tool_name, "args": tool_args}
-
-            result = execute_tool(tool_name, tool_args)
-            logger.info("Tool result: %s", result[:200])
-            yield {"type": "tool_result", "tool": tool_name, "result": result}
-
-            messages.append({"role": "tool", "content": result})
-
-        # Stream the follow-up response after tool results
-        try:
-            full_text = ""
-            for chunk in ollama.chat(
-                model=MODEL,
+        if model_cfg.provider == "ollama":
+            # Multi-tier handles tool calls differently
+            # Tier 1 & 2 use Ollama tools
+            tools = mcp.get_tool_definitions() if tier >= 2 or "time" in user_message or "search" in user_message else None
+            
+            response = ollama.chat(
+                model=model_cfg.model_name,
                 messages=messages,
-                stream=True,
-            ):
-                token = chunk.get("message", {}).get("content", "")
-                if token:
-                    full_text += token
-                    yield {"type": "token", "content": token}
+                tools=tools,
+                stream=False
+            )
+            
+            message = response.get("message", {})
+            tool_calls = message.get("tool_calls", None)
 
-            if full_text:
-                append("assistant", full_text)
-                yield {"type": "done"}
-                return
-        except Exception as e:
-            logger.error("Ollama follow-up failed: %s", e)
-            error_msg = f"Tool executed, but I hit an error formulating my response, Sir: {e}"
-            append("assistant", error_msg)
-            yield {"type": "text", "content": error_msg}
+            if tool_calls:
+                messages.append(message)
+                for tc in tool_calls:
+                    func = tc.get("function", {})
+                    name = func.get("name")
+                    args = func.get("arguments", {})
+                    
+                    yield {"type": "tool_call", "tool": name, "args": args}
+                    result = mcp.call_tool(name, args)
+                    yield {"type": "tool_result", "tool": name, "result": result}
+                    
+                    messages.append({"role": "tool", "content": result})
+
+                # Final follow-up
+                full_text = ""
+                for chunk in ollama.chat(model=model_cfg.model_name, messages=messages, stream=True):
+                    token = chunk.get("message", {}).get("content", "")
+                    if token:
+                        full_text += token
+                        yield {"type": "token", "content": token}
+                
+                # Mem0 Extract & Backups
+                if full_text:
+                    add_memory(user_message, "user")
+                    add_memory(full_text, "assistant")
+                    log_backup("user", user_message)
+                    log_backup("assistant", full_text)
+
+            else:
+                # No tools, stream directly
+                full_text = ""
+                for chunk in ollama.chat(model=model_cfg.model_name, messages=messages, stream=True):
+                    token = chunk.get("message", {}).get("content", "")
+                    if token:
+                        full_text += token
+                        yield {"type": "token", "content": token}
+                
+                if full_text:
+                    # Async memory update
+                    add_memory(user_message, "user")
+                    add_memory(full_text, "assistant")
+                    log_backup("user", user_message)
+                    log_backup("assistant", full_text)
+
+        elif model_cfg.provider == "anthropic":
+            # Cloud Tier 3 logic (placeholder for actual SDK usage)
+            yield {"type": "text", "content": "Sir, I am escalating to Cloud Advisor (Sonnet)..."}
+            # Mock implementation for now
+            yield {"type": "token", "content": "As a Tier 3 Advisor, I have analyzed your request... (Cloud Simulation)"}
             yield {"type": "done"}
             return
-    else:
-        # No tool calls — stream the response token by token
-        # Re-do the call with streaming enabled
-        try:
-            full_text = ""
-            for chunk in ollama.chat(
-                model=MODEL,
-                messages=messages,
-                stream=True,
-            ):
-                token = chunk.get("message", {}).get("content", "")
-                if token:
-                    full_text += token
-                    yield {"type": "token", "content": token}
 
-            if full_text:
-                append("assistant", full_text)
-        except Exception as e:
-            logger.error("Ollama streaming failed: %s", e)
-            error_msg = f"System error, Sir: {e}"
-            append("assistant", error_msg)
-            yield {"type": "text", "content": error_msg}
+    except Exception as e:
+        logger.error("Chat failure: %s", e)
+        yield {"type": "text", "content": f"I'm afraid I've encountered a system failure, Sir: {e}"}
 
     yield {"type": "done"}

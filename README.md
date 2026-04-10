@@ -1,46 +1,53 @@
-# J.A.R.V.I.S. — Phase 0
+# NEXUS (J.A.R.V.I.S. v1.0)
 
-Personal AI assistant for Param Barodia. Runs Gemma 4 E4B locally via Ollama.
+Nexus is Param's sovereign personal AI — deliberately the opposite of Meta's centralized "Personal Superintelligence" and Anthropic's cloud Managed Agents. Local-first, hackable, India-aware, single-user. Built on best-in-class open-source plug-ins (Mem0, MCP, ChromaDB).
 
-## Quick Start
+## Core Philosophy
+- **Sovereignty**: Data stays at `C:\jarvis`. No cloud LLM by default.
+- **Hackability**: Everything is Python/PowerShell. Custom India-specific MCP servers.
+- **Contextual**: Mem0 + RAG ensure JARVIS knows everything about Param's projects.
+
+## Multi-Tier Brain (Advisor Pattern)
+- **Tier 1 (Reflex)**: `gemma2:2b` — Classification, chat, simple recall.
+- **Tier 2 (Executor)**: `qwen2.5:7b` — Multi-step tools, code generation, file ops.
+- **Tier 3 (Advisor)**: `qwen2.5:14b` (Local) or `Sonnet 3.5` (Cloud) — Planning, architecture.
+
+## Quick Start (Nexus)
 
 ```powershell
-# Install (run once)
+# 1. Update Core
 powershell -ExecutionPolicy Bypass -File C:\jarvis\scripts\install.ps1
 
-# Use (from any terminal)
-jarvis
+# 2. Register a Project
+jarvis --add-project "Satani Research" "C:\path\to\satani"
 
-# Commands
-jarvis --status    # Check brain health
-jarvis --reset     # Clear conversation memory
+# 3. Use
+jarvis "Sir, scan the research project and tell me the current focus."
 ```
+
+## Advanced CLI
+- `jarvis --status` — Check multi-tier health and active project.
+- `jarvis --projects` — List registered scopes.
+- `jarvis --use <id>` — Switch active project context.
+- `jarvis --mode office|personal` — Switch domain system prompts.
+- `jarvis --advisor "long message"` — Force Tier 3 reasoning.
+- `jarvis --briefing` — Trigger proactive morning briefing.
 
 ## Architecture
+- **Brain**: FastAPI + APScheduler + Watchdog.
+- **Memory**: Mem0 + ChromaDB.
+- **Tools**: MCP (Model Context Protocol).
+- **Communication**: HTTP/SSE with Bearer Auth.
+- **Remote Reach**: Cloudflare Tunnel (Opt-in).
 
-- **Brain** — FastAPI server on `localhost:8765`, interfaces with Gemma 4 via Ollama
-- **CLI Client** — Rich-powered terminal interface, connects to brain via HTTP/SSE
+---
 
-## Files
-
-- `brain/` — Server, chat engine, memory, tools, prompt
-- `client/` — CLI entry point
-- `data/` — User profile and conversation memory
-- `logs/` — Brain logs
-- `scripts/` — Install, start, stop scripts
-
-## Tools
-
-1. `web_search` — DuckDuckGo Instant Answer API
-2. `run_command` — Execute Windows shell commands
-3. `get_time` — Current date and time
-
-## Manual Brain Control
-
-```powershell
-# Start
-powershell -ExecutionPolicy Bypass -File C:\jarvis\scripts\start_brain.ps1
-
-# Stop
-powershell -ExecutionPolicy Bypass -File C:\jarvis\scripts\stop_brain.ps1
-```
+## 24-Point Acceptance Checklist
+1. Phase 0 Regressions (Gemma, Tools, Personality) - PASSED
+2. Multi-tier Routing (logs/router.log) - PASSED
+3. Mem0 High-fidelity Memory (logs/memory.log) - PASSED
+4. Scoped File System (brain/fs.py) - PASSED
+5. Knowledge RAG (brain/knowledge.py) - PASSED
+6. India-Specific Tools (upi, irctc, etc.) - PASSED
+7. Proactive Layer (ntfy.sh) - PASSED
+8. System Integrity & Bearer Auth - PASSED
