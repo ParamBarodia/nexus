@@ -13,3 +13,13 @@ apscheduler
 watchdog
 apprise
 anthropic
+pydantic
+# Voice
+faster-whisper
+openwakeword
+sounddevice
+pyttsx3
+# Search
+tavily-python
+# Hooks
+pyperclip

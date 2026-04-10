@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS Dashboard</title>
+<style>
+  :root { --bg: #0a0a0f; --card: #12121a; --border: #1e1e2e; --cyan: #00d4ff; --green: #00ff88; --yellow: #ffd700; --red: #ff4444; --dim: #666; --text: #e0e0e0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
+  h1 { color: var(--cyan); font-size: 1.8em; margin-bottom: 20px; letter-spacing: 2px; }
+  h1 span { color: var(--dim); font-size: 0.5em; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 16px; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
+  .card h2 { color: var(--cyan); font-size: 1em; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
+  .stat { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); }
+  .stat:last-child { border-bottom: none; }
+  .stat .label { color: var(--dim); }
+  .stat .value { color: var(--green); font-weight: bold; }
+  .stat .value.warn { color: var(--yellow); }
+  .stat .value.err { color: var(--red); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 0.8em; }
+  .badge.ok { background: rgba(0,255,136,0.15); color: var(--green); }
+  .badge.off { background: rgba(255,68,68,0.15); color: var(--red); }
+  .badge.stub { background: rgba(255,215,0,0.15); color: var(--yellow); }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
+  th { text-align: left; color: var(--dim); padding: 4px 0; }
+  td { padding: 4px 0; }
+  button { background: var(--cyan); color: var(--bg); border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 8px; }
+  button:hover { opacity: 0.8; }
+  .budget-bar { height: 8px; background: var(--border); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+  .budget-fill { height: 100%; background: var(--green); border-radius: 4px; transition: width 0.3s; }
+  .budget-fill.warn { background: var(--yellow); }
+  .budget-fill.over { background: var(--red); }
+  #log { font-family: monospace; font-size: 0.8em; max-height: 200px; overflow-y: auto; background: #080810; padding: 8px; border-radius: 4px; margin-top: 8px; }
+  #log div { padding: 2px 0; color: var(--dim); }
+</style>
+</head>
+<body>
+
+<h1>N E X U S <span>Dashboard v2.0</span></h1>
+
+<div class="grid">
+  <!-- System Status -->
+  <div class="card" id="status-card">
+    <h2>System Status</h2>
+    <div class="stat"><span class="label">Brain</span><span class="value" id="s-brain">...</span></div>
+    <div class="stat"><span class="label">Model</span><span class="value" id="s-model">...</span></div>
+    <div class="stat"><span class="label">Mode</span><span class="value" id="s-mode">...</span></div>
+    <div class="stat"><span class="label">Project</span><span class="value" id="s-project">...</span></div>
+    <div class="stat"><span class="label">Memory Facts</span><span class="value" id="s-memory">...</span></div>
+  </div>
+
+  <!-- Cost Tracking -->
+  <div class="card">
+    <h2>Cloud Advisor Costs</h2>
+    <div class="stat"><span class="label">Today</span><span class="value" id="c-today">$0.00</span></div>
+    <div class="stat"><span class="label">Budget</span><span class="value" id="c-limit">$2.00</span></div>
+    <div class="budget-bar"><div class="budget-fill" id="c-bar" style="width:0%"></div></div>
+    <div id="c-recent" style="margin-top:12px; font-size:0.85em; color:var(--dim)"></div>
+  </div>
+
+  <!-- Skills -->
+  <div class="card">
+    <h2>Skills Registry</h2>
+    <table>
+      <tr><th>Name</th><th>Tier</th><th>Triggers</th></tr>
+      <tbody id="skills-body"></tbody>
+    </table>
+  </div>
+
+  <!-- Hooks -->
+  <div class="card">
+    <h2>Event Hooks</h2>
+    <div id="hooks-body"></div>
+  </div>
+
+  <!-- Backup -->
+  <div class="card">
+    <h2>Backups</h2>
+    <div id="backup-list"></div>
+    <button onclick="doBackup()">Backup Now</button>
+  </div>
+
+  <!-- India MCP -->
+  <div class="card">
+    <h2>India MCP Services</h2>
+    <div class="stat"><span class="label">ESPNCricinfo</span><span class="badge stub">Stub</span></div>
+    <div class="stat"><span class="label">IMD Weather</span><span class="badge stub">Stub</span></div>
+    <div class="stat"><span class="label">IRCTC Train</span><span class="badge stub">Stub</span></div>
+    <div class="stat"><span class="label">UPI Status</span><span class="badge stub">Stub</span></div>
+    <div class="stat"><span class="label">WhatsApp</span><span class="badge" id="wa-badge">...</span></div>
+  </div>
+
+  <!-- Voice -->
+  <div class="card">
+    <h2>Voice Session</h2>
+    <div class="stat"><span class="label">Status</span><span class="value" id="v-status">Inactive</span></div>
+    <p style="color:var(--dim);font-size:0.85em;margin-top:8px;">Use CLI: <code>jarvis --listen</code> or <code>jarvis --push-to-talk</code></p>
+  </div>
+</div>
+
+<script>
+const API = 'http://localhost:8765';
+
+async function refresh() {
+  // Status
+  try {
+    const s = await (await fetch(`${API}/status`)).json();
+    document.getElementById('s-brain').textContent = s.ok ? 'Online' : 'Offline';
+    document.getElementById('s-brain').className = 'value' + (s.ok ? '' : ' err');
+    document.getElementById('s-model').textContent = s.model;
+    document.getElementById('s-mode').textContent = s.mode;
+    document.getElementById('s-project').textContent = s.project || 'None';
+    document.getElementById('s-memory').textContent = s.memory_facts;
+  } catch(e) {
+    document.getElementById('s-brain').textContent = 'Offline';
+    document.getElementById('s-brain').className = 'value err';
+  }
+
+  // Costs
+  try {
+    const c = await (await fetch(`${API}/costs`)).json();
+    document.getElementById('c-today').textContent = `$${c.today_usd.toFixed(4)}`;
+    document.getElementById('c-limit').textContent = `$${c.daily_limit_usd.toFixed(2)}`;
+    const pct = Math.min((c.today_usd / c.daily_limit_usd) * 100, 100);
+    const bar = document.getElementById('c-bar');
+    bar.style.width = pct + '%';
+    bar.className = 'budget-fill' + (pct > 80 ? (pct >= 100 ? ' over' : ' warn') : '');
+    const recent = c.recent.slice(-3).reverse().map(r =>
+      `${r.model}: ${r.tokens_in}in/${r.tokens_out}out = $${r.cost_usd.toFixed(6)}`
+    ).join('<br>');
+    document.getElementById('c-recent').innerHTML = recent || 'No cloud calls yet.';
+  } catch(e) {}
+
+  // Skills
+  try {
+    const sk = await (await fetch(`${API}/skills`)).json();
+    document.getElementById('skills-body').innerHTML = sk.map(s =>
+      `<tr><td style="color:var(--cyan)">${s.name}</td><td>${s.tier}</td><td style="color:var(--dim)">${s.triggers.slice(0,2).join(', ')}</td></tr>`
+    ).join('');
+  } catch(e) {}
+
+  // Hooks
+  try {
+    const hk = await (await fetch(`${API}/hooks`)).json();
+    document.getElementById('hooks-body').innerHTML = hk.length ? hk.map(h =>
+      `<div class="stat"><span class="label">${h.description}</span><span class="badge ${h.enabled ? 'ok' : 'off'}">${h.enabled ? 'ON' : 'OFF'}</span></div>`
+    ).join('') : '<div style="color:var(--dim)">No hooks registered.</div>';
+  } catch(e) {}
+
+  // Backups
+  try {
+    const bk = await (await fetch(`${API}/backups`)).json();
+    document.getElementById('backup-list').innerHTML = bk.slice(0, 5).map(b =>
+      `<div class="stat"><span class="label">${b.name}</span><span class="value">${b.size_mb} MB</span></div>`
+    ).join('') || '<div style="color:var(--dim)">No backups yet.</div>';
+  } catch(e) {}
+
+  // WhatsApp
+  try {
+    const wa = await (await fetch(`${API}/whatsapp/status`)).json();
+    const badge = document.getElementById('wa-badge');
+    if (!wa.enabled) { badge.textContent = 'Disabled'; badge.className = 'badge off'; }
+    else if (wa.connected) { badge.textContent = 'Connected'; badge.className = 'badge ok'; }
+    else { badge.textContent = 'Disconnected'; badge.className = 'badge off'; }
+  } catch(e) {}
+}
+
+async function doBackup() {
+  const resp = await fetch(`${API}/api/action`, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({action: 'backup_now'})
+  });
+  const data = await resp.json();
+  alert(data.result || 'Done');
+  refresh();
+}
+
+refresh();
+setInterval(refresh, 10000);
+</script>
+</body>
+</html>

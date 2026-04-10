@@ -89,7 +89,23 @@ class MCPManager:
             "handler": recall
         }
 
-        # Load India MCP Servers
+        # Real WhatsApp tool (replaces stub if bridge available)
+        from brain.whatsapp.client import send_message as wa_send, is_connected as wa_connected
+        self.tools["whatsapp_send"] = {
+            "name": "whatsapp_send",
+            "description": "Send a WhatsApp message to a phone number.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "number": {"type": "string", "description": "Phone number with country code (e.g. +91...)"},
+                    "message": {"type": "string", "description": "Message text to send"},
+                },
+                "required": ["number", "message"],
+            },
+            "handler": lambda number, message: wa_send(number, message) if wa_connected() else "WhatsApp bridge is not running.",
+        }
+
+        # Load India MCP Servers (will skip whatsapp_send stub since we already registered the real one)
         self._load_india_mcp()
 
     def _load_india_mcp(self):
@@ -114,6 +130,23 @@ class MCPManager:
         return datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
 
     def _web_search(self, query: str):
+        """Tavily first (if key set), DDG fallback."""
+        import os
+        tavily_key = os.getenv("TAVILY_API_KEY", "")
+        if tavily_key:
+            try:
+                from tavily import TavilyClient
+                client = TavilyClient(api_key=tavily_key)
+                resp = client.search(query, max_results=5, search_depth="basic")
+                parts = []
+                if resp.get("answer"):
+                    parts.append(f"Summary: {resp['answer']}")
+                for r in resp.get("results", [])[:5]:
+                    parts.append(f"{r.get('title', '')}: {r.get('content', '')}")
+                if parts:
+                    return "\n\n".join(parts)[:3000]
+            except Exception as e:
+                logger.warning("Tavily search failed, falling back to DDG: %s", e)
         from brain.tools import web_search
         return web_search(query)
 

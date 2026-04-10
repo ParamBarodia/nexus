@@ -50,11 +50,35 @@ async def evening_reflection():
     p_logger.info("Executing evening reflection...")
     notify("Good evening, Sir. Would you like to review today's progress?", "Evening Reflection")
 
+async def daily_backup():
+    """Automated daily backup at 3 AM."""
+    from brain.backup import backup_all
+    try:
+        result = backup_all()
+        p_logger.info("Daily backup: %s", result)
+    except Exception as e:
+        p_logger.error("Daily backup failed: %s", e)
+
+
+async def weekly_export():
+    """Automated weekly markdown export at Sunday midnight."""
+    from brain.backup import export_human_readable
+    try:
+        result = export_human_readable()
+        p_logger.info("Weekly export: %s", result)
+    except Exception as e:
+        p_logger.error("Weekly export failed: %s", e)
+
+
 def start_scheduler():
     # Morning briefing at 8:00 AM
     scheduler.add_job(morning_briefing, 'cron', hour=8, minute=0)
     # Evening reflection at 9:00 PM
     scheduler.add_job(evening_reflection, 'cron', hour=21, minute=0)
-    
+    # Daily backup at 3:00 AM
+    scheduler.add_job(daily_backup, 'cron', hour=3, minute=0)
+    # Weekly export at Sunday midnight
+    scheduler.add_job(weekly_export, 'cron', day_of_week='sun', hour=0, minute=0)
+
     scheduler.start()
-    logger.info("Proactive scheduler started.")
+    logger.info("Proactive scheduler started (briefings + backups).")

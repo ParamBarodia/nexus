@@ -30,9 +30,10 @@ def get_model_for_tier(tier: int, preference: Optional[str] = None) -> ModelConf
     elif tier == 2:
         return ModelConfig(tier=2, model_name=TIER2_MODEL, provider="ollama")
     elif tier == 3:
-        if preference == "cloud" and TIER3_CLOUD_ENABLED and ANTHROPIC_API_KEY:
-            return ModelConfig(tier=3, model_name="claude-3-5-sonnet-20241022", provider="anthropic")
-        # Default to local TIER3
+        if preference == "local":
+            return ModelConfig(tier=3, model_name=TIER3_LOCAL_MODEL, provider="ollama")
+        if TIER3_CLOUD_ENABLED and ANTHROPIC_API_KEY and preference != "local":
+            return ModelConfig(tier=3, model_name=os.getenv("TIER3_CLOUD_MODEL", "claude-sonnet-4-5-20250929"), provider="anthropic")
         return ModelConfig(tier=3, model_name=TIER3_LOCAL_MODEL, provider="ollama")
     
     # Default to tier 1
