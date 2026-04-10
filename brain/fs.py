@@ -9,16 +9,25 @@ from brain.projects import get_active, list_projects
 
 logger = logging.getLogger("jarvis.fs")
 
-def validate_path(path: str) -> Optional[Path]:
+def validate_path(path: str, project_id: str = None) -> Optional[Path]:
     """Ensures path resolves inside a registered project root."""
+    requested_path = Path(path)
+    projects = list_projects()
+
+    if project_id:
+        target_proj = next((p for p in projects if p["id"] == project_id), None)
+        if target_proj:
+            root = Path(target_proj["path"]).resolve()
+            if not requested_path.is_absolute():
+                requested_path = root / requested_path
+
     try:
-        requested = Path(path).resolve()
+        requested = requested_path.resolve()
     except Exception as e:
         logger.error("Path resolution failed for %s: %s", path, e)
         return None
 
     # Check against ALL registered projects, not just active one
-    projects = list_projects()
     for proj in projects:
         root = Path(proj["path"]).resolve()
         if requested.is_relative_to(root):
@@ -27,8 +36,8 @@ def validate_path(path: str) -> Optional[Path]:
     logger.warning("Access denied: path %s is not within any registered project folder.", path)
     return None
 
-def safe_read(path: str) -> str:
-    valid_path = validate_path(path)
+def safe_read(path: str, project_id: str = None) -> str:
+    valid_path = validate_path(path, project_id)
     if not valid_path:
         return "ERROR: Access denied. Path outside project scope."
     try:
@@ -38,8 +47,8 @@ def safe_read(path: str) -> str:
     except Exception as e:
         return f"ERROR: Could not read file: {e}"
 
-def safe_write(path: str, content: str) -> str:
-    valid_path = validate_path(path)
+def safe_write(path: str, content: str, project_id: str = None) -> str:
+    valid_path = validate_path(path, project_id)
     if not valid_path:
         return "ERROR: Access denied. Path outside project scope."
     try:
@@ -49,8 +58,8 @@ def safe_write(path: str, content: str) -> str:
     except Exception as e:
         return f"ERROR: Could not write file: {e}"
 
-def safe_delete(path: str) -> str:
-    valid_path = validate_path(path)
+def safe_delete(path: str, project_id: str = None) -> str:
+    valid_path = validate_path(path, project_id)
     if not valid_path:
         return "ERROR: Access denied. Path outside project scope."
     try:
@@ -62,8 +71,8 @@ def safe_delete(path: str) -> str:
     except Exception as e:
         return f"ERROR: Could not delete: {e}"
 
-def list_dir(path: str) -> List[str]:
-    valid_path = validate_path(path)
+def list_dir(path: str, project_id: str = None) -> List[str]:
+    valid_path = validate_path(path, project_id)
     if not valid_path:
         return ["ERROR: Access denied."]
     try:
@@ -73,8 +82,8 @@ def list_dir(path: str) -> List[str]:
     except Exception as e:
         return [f"ERROR: {e}"]
 
-def tree(path: str, depth: int = 2) -> str:
-    valid_path = validate_path(path)
+def tree(path: str, depth: int = 2, project_id: str = None) -> str:
+    valid_path = validate_path(path, project_id)
     if not valid_path:
         return "ERROR: Access denied."
     

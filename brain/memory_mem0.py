@@ -15,7 +15,7 @@ mem_logger.setLevel(logging.INFO)
 
 config = {
     "vector_store": {
-        "provider": "chromadb",
+        "provider": "chroma",
         "config": {
             "path": r"C:\jarvis\data\chroma",
         }
@@ -51,7 +51,14 @@ def get_memories(query: str):
     """Retrieve top N relevant memories."""
     try:
         results = m.search(query, user_id=USER_ID, limit=5)
-        return [r["memory"] for r in results]
+        # Ensure results is a list of dicts
+        memories = []
+        for r in results:
+            if isinstance(r, dict) and "memory" in r:
+                memories.append(r["memory"])
+            elif isinstance(r, str):
+                memories.append(r)
+        return memories
     except Exception as e:
         mem_logger.error("Failed to search memory: %s", e)
         return []

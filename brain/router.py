@@ -27,7 +27,7 @@ Tier 3: Advisor (complex planning, hard reasoning, debugging, architecture, deep
 Rules:
 - Default to Tier 1 unless executor/advisor capabilities are clearly needed.
 - If user message mentions "think harder", "use advisor", or "deep work", MUST use Tier 3.
-- Output ONLY valid JSON: {"tier": 1|2|3, "confidence": 0.0-1.0, "reason": "string"}
+- Output ONLY valid JSON: {{"tier": 1|2|3, "confidence": 0.0-1.0, "reason": "string"}}
 
 User Message: {message}"""
 
@@ -48,12 +48,19 @@ def classify_message(message: str) -> RoutingDecision:
             stream=False
         )
         content = response.get("message", {}).get("content", "{}")
-        decision = json.loads(content)
+        router_logger.info("Raw model output: %s", content)
+        try:
+            decision = json.loads(content)
+        except:
+            decision = {}
+
+        if not isinstance(decision, dict) or "tier" not in decision:
+            decision = {"tier": 1, "confidence": 0.5, "reason": "Model returned invalid or non-dictionary JSON."}
         
         # Validation
-        if "tier" not in decision: decision["tier"] = 1
-        if "confidence" not in decision: decision["confidence"] = 0.5
-        if "reason" not in decision: decision["reason"] = "Defaulted due to parsing error."
+        if not isinstance(decision.get("tier"), int): decision["tier"] = 1
+        if not isinstance(decision.get("confidence"), (int, float)): decision["confidence"] = 0.5
+        if not isinstance(decision.get("reason"), str): decision["reason"] = "Defaulted due to validation error."
         
         router_logger.info("Decision: %s | Message: %s", json.dumps(decision), message[:100])
         return decision

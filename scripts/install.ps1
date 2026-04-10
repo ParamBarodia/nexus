@@ -24,7 +24,7 @@ Write-Host "  Directories OK." -ForegroundColor Green
 Write-Host "[1.5/8] Setting up environment variables..." -ForegroundColor Yellow
 $envFile = Join-Path $jarvisRoot ".env"
 if (-not (Test-Path $envFile)) {
-    $token = [Convert]::ToBase64String([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+    $token = [guid]::NewGuid().ToString().Replace("-", "")
     $envContent = @"
 TIER2_MODEL=qwen2.5:7b
 TIER3_LOCAL_MODEL=qwen2.5:14b

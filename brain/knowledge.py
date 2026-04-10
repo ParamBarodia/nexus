@@ -11,7 +11,7 @@ from brain.projects import list_projects
 
 logger = logging.getLogger("jarvis.knowledge")
 
-CHROMA_PATH = r"C:\jarvis\data\chroma"
+CHROMA_PATH = r"C:\jarvis\data\chroma_knowledge"
 client = chromadb.PersistentClient(path=CHROMA_PATH)
 embedding_fn = embedding_functions.DefaultEmbeddingFunction()
 
