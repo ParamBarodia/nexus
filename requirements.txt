@@ -19,7 +19,26 @@ faster-whisper
 openwakeword
 sounddevice
 pyttsx3
+edge-tts
+pygame
 # Search
 tavily-python
 # Hooks
 pyperclip
+# Connectors
+feedparser
+yfinance
+google-auth-oauthlib
+google-api-python-client
+cryptography
+httpx
+# Capabilities
+pytesseract
+pygetwindow
+psutil
+pdfplumber
+pycaw
+plyer
+screen-brightness-control
+# HUD
+PyQt6

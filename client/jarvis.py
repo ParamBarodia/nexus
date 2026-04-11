@@ -235,6 +235,12 @@ def main():
     parser.add_argument("--push-to-talk", action="store_true", help="Push-to-talk voice")
     parser.add_argument("--voice-session", action="store_true", help="Full voice conversation")
 
+    # Connectors / HUD
+    parser.add_argument("--connectors", action="store_true", help="List all connectors")
+    parser.add_argument("--setup", action="store_true", help="Interactive connector setup wizard")
+    parser.add_argument("--hud", action="store_true", help="Launch desktop HUD overlay")
+    parser.add_argument("--greet", action="store_true", help="Speak startup greeting with top updates")
+
     args = parser.parse_args()
 
     # Priority flags
@@ -264,6 +270,33 @@ def main():
         list_hooks_cmd(); sys.exit(0)
     if args.hook_add:
         add_hook_cmd(args.hook_add); sys.exit(0)
+
+    # Connectors / HUD
+    if args.connectors:
+        resp = requests.get(f"{BRAIN_URL}/connectors", headers=get_headers())
+        data = resp.json()
+        table = Table(title="Nexus Connectors")
+        table.add_column("Name", style="cyan")
+        table.add_column("Category", style="dim")
+        table.add_column("Status", style="green")
+        table.add_column("Description")
+        for c in data:
+            status_style = {"active": "green", "available": "cyan", "stub": "yellow"}.get(c["status"], "dim")
+            table.add_row(c["name"], c["category"], f"[{status_style}]{c['status']}[/{status_style}]", c["description"][:50])
+        console.print(table)
+        sys.exit(0)
+    if args.setup:
+        from hud.setup_wizard import run_wizard
+        run_wizard()
+        sys.exit(0)
+    if args.hud:
+        from hud.overlay import run_hud
+        run_hud()
+        sys.exit(0)
+    if args.greet:
+        from hud.startup_greeting import run_greeting
+        run_greeting()
+        sys.exit(0)
 
     # Voice modes
     if args.listen:

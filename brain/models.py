@@ -16,7 +16,7 @@ class ModelConfig(BaseModel):
     model_name: str
     provider: str  # "ollama" or "anthropic"
 
-TIER1_MODEL = "gemma2:2b"
+TIER1_MODEL = os.getenv("TIER1_MODEL", "gemma2:2b")
 TIER2_MODEL = os.getenv("TIER2_MODEL", "qwen2.5:7b")
 TIER3_LOCAL_MODEL = os.getenv("TIER3_LOCAL_MODEL", "qwen2.5:14b")
 TIER3_CLOUD_ENABLED = os.getenv("TIER3_CLOUD_ENABLED", "false").lower() == "true"

@@ -8,7 +8,11 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import ollama
 from dotenv import load_dotenv
+
+from brain.memory import append as log_backup
+from brain.memory_mem0 import add_memory
 
 load_dotenv(r"C:\jarvis\.env")
 
@@ -87,7 +91,6 @@ async def run_cloud_advisor(user_message: str, system_prompt: str,
                           f"Falling back to local Tier 3."}
         # Fallback to local tier 3
         from brain.models import get_model_for_tier
-        import ollama
         local_cfg = get_model_for_tier(3, preference="local")
         yield {"type": "routing", "tier": 3, "reason": "Budget exceeded, using local advisor."}
         full_text = ""
@@ -98,8 +101,6 @@ async def run_cloud_advisor(user_message: str, system_prompt: str,
                 full_text += token
                 yield {"type": "token", "content": token}
         if full_text:
-            from brain.memory import append as log_backup
-            from brain.memory_mem0 import add_memory
             add_memory(user_message, "user")
             add_memory(full_text, "assistant")
             log_backup("user", user_message)
@@ -152,8 +153,6 @@ What could go wrong and mitigations.
         logger.info("Advisor response: %d chars, $%.6f", len(full_text), cost)
 
         # Save to memory
-        from brain.memory import append as log_backup
-        from brain.memory_mem0 import add_memory
         add_memory(user_message, "user")
         add_memory(full_text, "assistant")
         log_backup("user", user_message)
@@ -163,7 +162,6 @@ What could go wrong and mitigations.
         logger.error("Cloud advisor failed: %s", e)
         yield {"type": "text", "content": f"Cloud advisor encountered an error, Sir: {e}. Falling back to local."}
         # Fallback to local
-        import ollama
         from brain.models import get_model_for_tier
         local_cfg = get_model_for_tier(3, preference="local")
         full_text = ""

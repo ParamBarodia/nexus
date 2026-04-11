@@ -7,7 +7,7 @@ from typing import Any
 
 import ollama
 from brain.memory import append as log_backup
-from brain.memory_mem0 import add_memory, get_memories
+from brain.memory_enhanced import add_memory_enhanced, get_memories_weighted
 from brain.prompt import build_system_prompt
 from brain.router import classify_message
 from brain.models import get_model_for_tier
@@ -16,18 +16,11 @@ from brain.skills_loader import match_skill
 
 logger = logging.getLogger("jarvis.chat")
 
-# Tool-related keywords that signal escalation from Tier 1 to Tier 2
-_TOOL_KEYWORDS = [
-    "time", "date", "search", "weather", "read file", "write file", "list dir",
-    "run python", "execute", "cricket", "train", "upi", "whatsapp", "recall",
-    "project tree", "scan project", "delete file", "what time", "what date",
-]
-
 
 def _needs_tools(message: str) -> bool:
-    """Check if a message likely needs tool access."""
+    """Check if a message likely needs tool access (auto-derived from registered MCP tools)."""
     lower = message.lower()
-    return any(kw in lower for kw in _TOOL_KEYWORDS)
+    return any(name.replace("_", " ") in lower for name in mcp.tools.keys())
 
 
 async def _run_ollama_chat(model_name: str, messages: list, tools: list | None,
@@ -99,8 +92,8 @@ async def stream_chat(user_message: str, force_tier: int = None) -> AsyncIterato
     yield {"type": "routing", "tier": tier, "reason": decision["reason"]}
     logger.info("Routing: Tier %d (%s)", tier, model_cfg.model_name)
 
-    # 2. Context Building (Mem0 + Skills Inject)
-    memories = get_memories(user_message)
+    # 2. Context Building (Enhanced Memory + Skills Inject)
+    memories = get_memories_weighted(user_message)
     system_prompt = build_system_prompt()
 
     # Skills: check if message triggers a skill, inject its prompt
@@ -128,8 +121,10 @@ async def stream_chat(user_message: str, force_tier: int = None) -> AsyncIterato
 
             async for chunk in _run_ollama_chat(model_cfg.model_name, messages, tools, user_message):
                 if chunk["type"] == "_save":
-                    add_memory(chunk["user"], "user")
-                    add_memory(chunk["assistant"], "assistant")
+                    add_memory_enhanced(chunk["user"], "user",
+                                        user_msg=chunk["user"], assistant_msg=chunk["assistant"])
+                    add_memory_enhanced(chunk["assistant"], "assistant",
+                                        user_msg=chunk["user"], assistant_msg=chunk["assistant"])
                     log_backup("user", chunk["user"])
                     log_backup("assistant", chunk["assistant"])
                 else:

@@ -26,6 +26,7 @@ Tier 3: Advisor (complex planning, hard reasoning, debugging, architecture, deep
 
 Rules:
 - Default to Tier 1 unless executor/advisor capabilities are clearly needed.
+- If user message mentions reading, writing, or listing files, MUST use Tier 2.
 - If user message mentions "think harder", "use advisor", or "deep work", MUST use Tier 3.
 - Output ONLY valid JSON: {{"tier": 1|2|3, "confidence": 0.0-1.0, "reason": "string"}}
 
@@ -58,7 +59,11 @@ def classify_message(message: str) -> RoutingDecision:
             decision = {"tier": 1, "confidence": 0.5, "reason": "Model returned invalid or non-dictionary JSON."}
         
         # Validation
-        if not isinstance(decision.get("tier"), int): decision["tier"] = 1
+        try:
+            decision["tier"] = int(decision.get("tier", 1))
+        except (ValueError, TypeError):
+            decision["tier"] = 1
+            
         if not isinstance(decision.get("confidence"), (int, float)): decision["confidence"] = 0.5
         if not isinstance(decision.get("reason"), str): decision["reason"] = "Defaulted due to validation error."
         

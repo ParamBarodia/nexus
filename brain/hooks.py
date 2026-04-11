@@ -2,6 +2,7 @@
 
 import json
 import logging
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
@@ -111,12 +112,12 @@ def _on_event(event: Event):
                 async for _ in stream_chat(action_prompt, force_tier=2):
                     pass  # consume the stream, results go to memory
 
-            # Run in event loop if available, else create one
+            # Run in event loop if available, else spin up a daemon thread
             try:
                 loop = asyncio.get_running_loop()
                 loop.create_task(_run())
             except RuntimeError:
-                asyncio.run(_run())
+                threading.Thread(target=lambda: asyncio.run(_run()), daemon=True).start()
         except Exception as e:
             logger.error("Hook execution failed: %s", e)
 

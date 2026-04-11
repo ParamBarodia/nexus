@@ -100,14 +100,71 @@ async def _process_voice_turn(audio: np.ndarray) -> str:
     return response
 
 
+def _play_audio_signature(name: str):
+    """Play an audio signature (listening, thinking, done) if available."""
+    audio_dir = Path(r"C:\jarvis\data\audio")
+    wav_file = audio_dir / f"{name}.wav"
+    if not wav_file.exists():
+        return
+    try:
+        import winsound
+        winsound.PlaySound(str(wav_file), winsound.SND_FILENAME | winsound.SND_ASYNC)
+    except Exception:
+        pass  # Non-critical — skip silently
+
+
 def _speak(text: str):
-    """TTS output using pyttsx3 (offline) or edge-tts."""
+    """TTS output using edge-tts (preferred) with pyttsx3 fallback."""
     if not text:
         return
+
+    import os
+    tts_backend = os.getenv("TTS_BACKEND", "edge")
+
+    if tts_backend == "edge":
+        try:
+            import edge_tts
+            import tempfile
+
+            voice = os.getenv("TTS_VOICE", "en-GB-RyanNeural")
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as tmp:
+                tmp_path = tmp.name
+
+            async def _edge_speak():
+                communicate = edge_tts.Communicate(text, voice)
+                await communicate.save(tmp_path)
+
+            asyncio.run(_edge_speak())
+
+            # Play with PowerShell MediaPlayer (no extra deps needed)
+            import subprocess
+            ps_cmd = (
+                f'Add-Type -AssemblyName PresentationCore; '
+                f'$p = New-Object System.Windows.Media.MediaPlayer; '
+                f'$p.Open([Uri]::new("{tmp_path}")); '
+                f'$p.Play(); '
+                f'Start-Sleep -Milliseconds 500; '
+                f'while ($p.Position -lt $p.NaturalDuration.TimeSpan) {{ Start-Sleep -Milliseconds 200 }}; '
+                f'$p.Close()'
+            )
+            try:
+                subprocess.run(
+                    ["powershell", "-ExecutionPolicy", "Bypass", "-Command", ps_cmd],
+                    timeout=120, capture_output=True
+                )
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
+            return
+        except Exception as e:
+            logger.warning("edge-tts failed: %s, falling back to pyttsx3", e)
+
+    # Fallback: pyttsx3
     try:
         import pyttsx3
         engine = pyttsx3.init()
-        # Use a formal British voice if available
         voices = engine.getProperty("voices")
         for v in voices:
             if "david" in v.name.lower() or "british" in v.name.lower():
@@ -117,7 +174,7 @@ def _speak(text: str):
         engine.say(text)
         engine.runAndWait()
     except Exception as e:
-        logger.warning("TTS failed (pyttsx3): %s, trying print-only", e)
+        logger.warning("TTS failed (pyttsx3): %s, print-only", e)
         print(f"\n[JARVIS]: {text}")
 
 
@@ -132,6 +189,7 @@ def run_push_to_talk():
     try:
         while True:
             input("[Press Enter to speak] ")
+            _play_audio_signature("listening")
             console.print("[yellow]Listening...[/yellow]", end=" ")
             audio = record_until_silence(max_duration=30)
 
@@ -139,10 +197,12 @@ def run_push_to_talk():
                 console.print("[dim]Too short, skipped.[/dim]")
                 continue
 
+            _play_audio_signature("thinking")
             console.print("[green]Processing...[/green]")
             response = asyncio.run(_process_voice_turn(audio))
             if response:
                 _speak(response)
+                _play_audio_signature("done")
             console.print()
     except KeyboardInterrupt:
         console.print("\n[cyan]Signing off, Sir.[/cyan]")

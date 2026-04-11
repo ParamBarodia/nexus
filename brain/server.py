@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
@@ -23,6 +23,9 @@ from brain.skills_loader import load_skills, get_skills
 from brain.hooks import register_event_listeners, list_hooks, add_hook, toggle_hook, remove_hook
 from brain.events import ClipboardEventSource, IdleEventSource
 from brain.models import TIER1_MODEL
+from brain.connectors.registry import ConnectorRegistry
+from brain.connectors.scheduler import register_polling_jobs
+from brain.mcp_client import mcp
 
 from dotenv import load_dotenv
 load_dotenv(r"C:\jarvis\.env")
@@ -30,6 +33,7 @@ BEARER_TOKEN = os.getenv("BRAIN_BEARER_TOKEN", "")
 WHATSAPP_ENABLED = os.getenv("WHATSAPP_ENABLED", "false").lower() == "true"
 
 app = FastAPI(title="Nexus Brain", version="2.0.0")
+connector_registry = ConnectorRegistry()
 
 # Serve dashboard
 DASHBOARD_DIR = Path(r"C:\jarvis\dashboard")
@@ -53,6 +57,16 @@ async def startup_event():
     # Start file watchers (non-blocking)
     import threading
     threading.Thread(target=knowledge.start_watchers, daemon=True).start()
+    # Discover connectors and register their MCP tools
+    connector_registry.discover()
+    mcp.register_external_tools(connector_registry.get_all_mcp_tools())
+    register_polling_jobs(connector_registry, proactive.scheduler)
+    # Register local capability tools
+    try:
+        from brain.capabilities import register_all_capabilities
+        register_all_capabilities(mcp)
+    except Exception as e:
+        logging.warning("Capability tools partially loaded: %s", e)
     logging.info("Nexus systems initialized.")
 
 # --- Auth ---
@@ -230,6 +244,108 @@ async def wa_incoming(req: dict):
     reply = "".join(response_parts)
     logging.info("WhatsApp: %s -> %s", from_number, reply[:100])
     return {"reply": reply}
+
+# --- WebSocket Live Feed ---
+
+_ws_clients: list[WebSocket] = []
+
+@app.websocket("/ws/live")
+async def ws_live(websocket: WebSocket):
+    await websocket.accept()
+    _ws_clients.append(websocket)
+    try:
+        while True:
+            await websocket.receive_text()  # keep alive
+    except WebSocketDisconnect:
+        _ws_clients.remove(websocket)
+
+async def broadcast_ws(event_type: str, data: dict):
+    """Broadcast an event to all connected WebSocket clients."""
+    import json as _json
+    message = _json.dumps({"type": event_type, **data})
+    for client in list(_ws_clients):
+        try:
+            await client.send_text(message)
+        except Exception:
+            try:
+                _ws_clients.remove(client)
+            except ValueError:
+                pass
+
+# Wire event bus to WebSocket broadcasts
+from brain.events import bus as _event_bus, Event as _Event
+
+def _on_ws_event(event: _Event):
+    """Forward connector_data and ambient_alert events to WebSocket clients."""
+    if event.event_type in ("connector_data", "ambient_alert"):
+        import asyncio
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(broadcast_ws(event.event_type, event.payload))
+        except RuntimeError:
+            pass
+
+_event_bus.subscribe_all(_on_ws_event)
+
+# --- Briefing ---
+
+@app.get("/briefing/today")
+async def get_briefing():
+    try:
+        from brain.briefing.context_engine import get_todays_briefing
+        content = get_todays_briefing()
+        return {"briefing": content}
+    except Exception:
+        return {"briefing": None}
+
+@app.get("/briefing/reflection")
+async def get_reflection():
+    from datetime import date
+    from pathlib import Path as _Path
+    reflection_file = _Path(r"C:\jarvis\data\reflections") / f"{date.today().isoformat()}.md"
+    if reflection_file.exists():
+        return {"reflection": reflection_file.read_text(encoding="utf-8")}
+    return {"reflection": None}
+
+@app.post("/briefing/compose")
+async def compose_briefing():
+    try:
+        from brain.briefing.context_engine import prefetch_all, compose_briefing as _compose
+        from brain.memory_mem0 import get_memories as _get_mems
+        prefetched = await prefetch_all(connector_registry)
+        memories = _get_mems("daily briefing")
+        await _compose(prefetched, memories or [])
+        return {"ok": True}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+# --- Connectors ---
+
+@app.get("/connectors")
+async def list_connectors():
+    return connector_registry.list_available()
+
+@app.post("/connectors/install")
+async def install_connector(req: dict):
+    return connector_registry.install(req["name"], req.get("credentials"))
+
+@app.post("/connectors/uninstall")
+async def uninstall_connector(req: dict):
+    return connector_registry.uninstall(req["name"])
+
+@app.get("/connectors/{name}/health")
+async def connector_health(name: str):
+    c = connector_registry.get(name)
+    if not c:
+        raise HTTPException(404, f"Connector '{name}' not active")
+    return await c.health_check()
+
+@app.post("/connectors/{name}/fetch")
+async def connector_fetch(name: str, req: dict = None):
+    c = connector_registry.get(name)
+    if not c:
+        raise HTTPException(404, f"Connector '{name}' not active")
+    return await c.safe_fetch(req)
 
 # --- Dashboard Actions ---
 

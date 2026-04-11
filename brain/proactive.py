@@ -20,6 +20,30 @@ p_logger.setLevel(logging.INFO)
 
 scheduler = AsyncIOScheduler()
 
+# --- Lazy-loaded singletons for briefing subsystem ---
+_registry = None
+_ambient_monitor = None
+
+
+def _get_registry():
+    """Return (or create) the shared ConnectorRegistry instance."""
+    global _registry
+    if _registry is None:
+        from brain.connectors.registry import ConnectorRegistry
+        _registry = ConnectorRegistry()
+        _registry.discover()
+    return _registry
+
+
+def _get_ambient_monitor():
+    """Return (or create) the shared AmbientMonitor instance."""
+    global _ambient_monitor
+    if _ambient_monitor is None:
+        from brain.briefing.ambient_awareness import AmbientMonitor
+        _ambient_monitor = AmbientMonitor(_get_registry())
+    return _ambient_monitor
+
+
 def notify(message: str, title: str = "Nexus Briefing"):
     """Send notification via Apprise (ntfy.sh by default)."""
     topic = os.getenv("NTFY_TOPIC", "nexus-param")
@@ -31,24 +55,68 @@ def notify(message: str, title: str = "Nexus Briefing"):
     )
     p_logger.info("Notification sent: %s", title)
 
+
+async def prefetch_and_brief():
+    """7:30 AM job — prefetch all connectors then compose the morning briefing."""
+    from brain.briefing.context_engine import prefetch_all, compose_briefing
+    p_logger.info("Running prefetch + briefing composition...")
+    try:
+        registry = _get_registry()
+        prefetched = await prefetch_all(registry)
+        memories = get_memories("daily briefing context", limit=10)
+        await compose_briefing(prefetched, memories)
+        p_logger.info("Prefetch + briefing composition complete.")
+    except Exception as e:
+        p_logger.error("Prefetch/briefing failed: %s", e)
+
+
 async def morning_briefing():
-    """Generate and send morning briefing."""
+    """8:00 AM job — read today's composed briefing and send notification."""
+    from brain.briefing.context_engine import get_todays_briefing
     p_logger.info("Executing morning briefing...")
-    active = get_active()
-    proj_name = active["name"] if active else "No active project"
-    
-    # In a real scenario, we'd trigger an LLM call here. 
-    # For now, we'll use a placeholder logic that would be called by the LLM.
-    briefing = f"Good morning, Sir. Today is {datetime.now().strftime('%A, %B %d')}.\n"
-    briefing += f"Active project: {proj_name}\n"
-    briefing += "Systems are nominal. Awaiting your instructions."
-    
-    notify(briefing, "Morning Briefing")
+
+    briefing = get_todays_briefing()
+    if briefing:
+        # Truncate for notification if very long
+        notify_text = briefing if len(briefing) < 2000 else briefing[:1997] + "..."
+        notify(notify_text, "Morning Briefing")
+    else:
+        # Fallback to basic briefing if composition hasn't run
+        active = get_active()
+        proj_name = active["name"] if active else "No active project"
+        fallback = f"Good morning, Sir. Today is {datetime.now().strftime('%A, %B %d')}.\n"
+        fallback += f"Active project: {proj_name}\n"
+        fallback += "Systems are nominal. Awaiting your instructions."
+        notify(fallback, "Morning Briefing")
+
 
 async def evening_reflection():
-    """Prompt for evening reflection."""
+    """9:00 PM job — compose and send the evening reflection."""
+    from brain.briefing.evening_synthesis import compose_reflection
     p_logger.info("Executing evening reflection...")
-    notify("Good evening, Sir. Would you like to review today's progress?", "Evening Reflection")
+    try:
+        registry = _get_registry()
+        reflection = await compose_reflection(registry)
+        notify_text = reflection if len(reflection) < 2000 else reflection[:1997] + "..."
+        notify(notify_text, "Evening Reflection")
+    except Exception as e:
+        p_logger.error("Evening reflection failed: %s", e)
+        notify("Good evening, Sir. Would you like to review today's progress?", "Evening Reflection")
+
+
+async def ambient_check():
+    """Every-15-minute job — scan connectors for alert-worthy conditions."""
+    p_logger.info("Running ambient awareness check...")
+    try:
+        monitor = _get_ambient_monitor()
+        alerts = await monitor.check_all()
+        if alerts:
+            p_logger.info("Ambient check fired %d alert(s).", len(alerts))
+        else:
+            p_logger.debug("Ambient check — all clear.")
+    except Exception as e:
+        p_logger.error("Ambient check failed: %s", e)
+
 
 async def daily_backup():
     """Automated daily backup at 3 AM."""
@@ -71,14 +139,18 @@ async def weekly_export():
 
 
 def start_scheduler():
-    # Morning briefing at 8:00 AM
+    # 7:30 AM — prefetch connectors + compose briefing via LLM
+    scheduler.add_job(prefetch_and_brief, 'cron', hour=7, minute=30)
+    # 8:00 AM — send the composed briefing as notification
     scheduler.add_job(morning_briefing, 'cron', hour=8, minute=0)
-    # Evening reflection at 9:00 PM
+    # 9:00 PM — evening reflection
     scheduler.add_job(evening_reflection, 'cron', hour=21, minute=0)
-    # Daily backup at 3:00 AM
+    # Every 15 minutes — ambient awareness check
+    scheduler.add_job(ambient_check, 'interval', minutes=15)
+    # 3:00 AM — daily backup
     scheduler.add_job(daily_backup, 'cron', hour=3, minute=0)
-    # Weekly export at Sunday midnight
+    # Sunday midnight — weekly export
     scheduler.add_job(weekly_export, 'cron', day_of_week='sun', hour=0, minute=0)
 
     scheduler.start()
-    logger.info("Proactive scheduler started (briefings + backups).")
+    logger.info("Proactive scheduler started (briefings + ambient + backups).")

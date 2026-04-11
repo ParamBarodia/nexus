@@ -8,8 +8,15 @@
   :root { --bg: #0a0a0f; --card: #12121a; --border: #1e1e2e; --cyan: #00d4ff; --green: #00ff88; --yellow: #ffd700; --red: #ff4444; --dim: #666; --text: #e0e0e0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); padding: 20px; }
-  h1 { color: var(--cyan); font-size: 1.8em; margin-bottom: 20px; letter-spacing: 2px; }
-  h1 span { color: var(--dim); font-size: 0.5em; }
+  h1 { color: var(--cyan); font-size: 1.8em; margin-bottom: 20px; letter-spacing: 2px; display: flex; align-items: center; gap: 16px; }
+  h1 span.ver { color: var(--dim); font-size: 0.5em; }
+
+  /* Arc reactor pulse */
+  .reactor { width: 28px; height: 28px; border-radius: 50%; background: radial-gradient(circle, var(--cyan) 30%, transparent 70%); box-shadow: 0 0 12px var(--cyan), 0 0 24px rgba(0,212,255,0.3); animation: pulse 2s ease-in-out infinite; }
+  .reactor.deep { box-shadow: 0 0 16px #0088ff, 0 0 32px rgba(0,136,255,0.5); animation: pulse-deep 1.5s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity: 0.7; transform: scale(1); } 50% { opacity: 1; transform: scale(1.15); } }
+  @keyframes pulse-deep { 0%,100% { opacity: 0.8; transform: scale(1); } 50% { opacity: 1; transform: scale(1.25); } }
+
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 16px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 20px; }
   .card h2 { color: var(--cyan); font-size: 1em; margin-bottom: 12px; text-transform: uppercase; letter-spacing: 1px; }
@@ -23,22 +30,41 @@
   .badge.ok { background: rgba(0,255,136,0.15); color: var(--green); }
   .badge.off { background: rgba(255,68,68,0.15); color: var(--red); }
   .badge.stub { background: rgba(255,215,0,0.15); color: var(--yellow); }
+  .badge.available { background: rgba(0,212,255,0.15); color: var(--cyan); }
   table { width: 100%; border-collapse: collapse; font-size: 0.9em; }
   th { text-align: left; color: var(--dim); padding: 4px 0; }
   td { padding: 4px 0; }
-  button { background: var(--cyan); color: var(--bg); border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 8px; }
+  button { background: var(--cyan); color: var(--bg); border: none; padding: 6px 14px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 0.8em; }
   button:hover { opacity: 0.8; }
+  button.sm { padding: 3px 10px; font-size: 0.75em; }
+  button.danger { background: var(--red); }
   .budget-bar { height: 8px; background: var(--border); border-radius: 4px; margin-top: 8px; overflow: hidden; }
   .budget-fill { height: 100%; background: var(--green); border-radius: 4px; transition: width 0.3s; }
   .budget-fill.warn { background: var(--yellow); }
   .budget-fill.over { background: var(--red); }
-  #log { font-family: monospace; font-size: 0.8em; max-height: 200px; overflow-y: auto; background: #080810; padding: 8px; border-radius: 4px; margin-top: 8px; }
-  #log div { padding: 2px 0; color: var(--dim); }
+  .connector-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 8px; max-height: 400px; overflow-y: auto; }
+  .connector-tile { background: #0d0d14; border: 1px solid var(--border); border-radius: 6px; padding: 10px; font-size: 0.85em; }
+  .connector-tile .c-name { color: var(--cyan); font-weight: bold; margin-bottom: 4px; }
+  .connector-tile .c-cat { color: var(--dim); font-size: 0.75em; text-transform: uppercase; }
+  .connector-tile .c-desc { color: var(--dim); font-size: 0.75em; margin: 4px 0; }
+  .feed { max-height: 250px; overflow-y: auto; }
+  .feed-item { padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.85em; }
+  .feed-item .ts { color: var(--dim); font-size: 0.75em; margin-right: 8px; }
+  .briefing-preview { font-size: 0.85em; color: var(--text); white-space: pre-wrap; max-height: 200px; overflow-y: auto; background: #080810; padding: 10px; border-radius: 4px; }
+  .ws-status { font-size: 0.7em; padding: 2px 6px; border-radius: 3px; }
+  .ws-status.connected { background: rgba(0,255,136,0.15); color: var(--green); }
+  .ws-status.disconnected { background: rgba(255,68,68,0.15); color: var(--red); }
+  .wide { grid-column: span 2; }
+  @media (max-width: 750px) { .wide { grid-column: span 1; } }
 </style>
 </head>
 <body>
 
-<h1>N E X U S <span>Dashboard v2.0</span></h1>
+<h1>
+  <div class="reactor" id="reactor"></div>
+  N E X U S <span class="ver">Dashboard v3.0</span>
+  <span class="ws-status disconnected" id="ws-badge">WS: disconnected</span>
+</h1>
 
 <div class="grid">
   <!-- System Status -->
@@ -49,6 +75,7 @@
     <div class="stat"><span class="label">Mode</span><span class="value" id="s-mode">...</span></div>
     <div class="stat"><span class="label">Project</span><span class="value" id="s-project">...</span></div>
     <div class="stat"><span class="label">Memory Facts</span><span class="value" id="s-memory">...</span></div>
+    <div class="stat"><span class="label">Connectors</span><span class="value" id="s-connectors">...</span></div>
   </div>
 
   <!-- Cost Tracking -->
@@ -58,6 +85,27 @@
     <div class="stat"><span class="label">Budget</span><span class="value" id="c-limit">$2.00</span></div>
     <div class="budget-bar"><div class="budget-fill" id="c-bar" style="width:0%"></div></div>
     <div id="c-recent" style="margin-top:12px; font-size:0.85em; color:var(--dim)"></div>
+  </div>
+
+  <!-- Briefing Preview -->
+  <div class="card">
+    <h2>Today's Briefing</h2>
+    <div class="briefing-preview" id="briefing-content">No briefing composed yet today.</div>
+    <button onclick="composeBriefing()" style="margin-top:8px">Compose Now</button>
+  </div>
+
+  <!-- Ambient Events Feed -->
+  <div class="card">
+    <h2>Ambient Events</h2>
+    <div class="feed" id="ambient-feed">
+      <div style="color:var(--dim)">No events yet.</div>
+    </div>
+  </div>
+
+  <!-- Connector Marketplace -->
+  <div class="card wide">
+    <h2>Connector Marketplace</h2>
+    <div class="connector-grid" id="connector-grid">Loading...</div>
   </div>
 
   <!-- Skills -->
@@ -101,18 +149,83 @@
 </div>
 
 <script>
-const API = 'http://localhost:8765';
+const API = window.location.origin;
+
+// Auth
+function getToken() {
+  let token = localStorage.getItem('nexus_token');
+  if (!token) {
+    token = prompt('Enter BRAIN_BEARER_TOKEN:');
+    if (token) localStorage.setItem('nexus_token', token);
+  }
+  return token;
+}
+function authFetch(url, opts = {}) {
+  const token = getToken();
+  opts.headers = { ...(opts.headers || {}), 'Authorization': `Bearer ${token}` };
+  return fetch(url, opts);
+}
+
+// Ambient events buffer
+const ambientEvents = [];
+
+// WebSocket
+let ws = null;
+function connectWS() {
+  const wsUrl = API.replace('http', 'ws') + '/ws/live';
+  try {
+    ws = new WebSocket(wsUrl);
+    ws.onopen = () => {
+      document.getElementById('ws-badge').textContent = 'WS: connected';
+      document.getElementById('ws-badge').className = 'ws-status connected';
+    };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.type === 'connector_data') {
+          // Could update live cards here
+        } else if (msg.type === 'ambient_alert') {
+          ambientEvents.unshift({ ts: new Date().toLocaleTimeString(), ...msg });
+          if (ambientEvents.length > 20) ambientEvents.pop();
+          renderAmbientFeed();
+        }
+      } catch(err) {}
+    };
+    ws.onclose = () => {
+      document.getElementById('ws-badge').textContent = 'WS: disconnected';
+      document.getElementById('ws-badge').className = 'ws-status disconnected';
+      setTimeout(connectWS, 5000); // Reconnect
+    };
+    ws.onerror = () => { ws.close(); };
+  } catch(e) {
+    // WS not available — fall back to polling
+  }
+}
+
+function renderAmbientFeed() {
+  const el = document.getElementById('ambient-feed');
+  if (!ambientEvents.length) {
+    el.innerHTML = '<div style="color:var(--dim)">No events yet.</div>';
+    return;
+  }
+  el.innerHTML = ambientEvents.map(ev =>
+    `<div class="feed-item"><span class="ts">${ev.ts}</span>${ev.message || ev.connector || 'Event'}</div>`
+  ).join('');
+}
 
 async function refresh() {
   // Status
   try {
-    const s = await (await fetch(`${API}/status`)).json();
+    const s = await (await authFetch(`${API}/status`)).json();
     document.getElementById('s-brain').textContent = s.ok ? 'Online' : 'Offline';
     document.getElementById('s-brain').className = 'value' + (s.ok ? '' : ' err');
     document.getElementById('s-model').textContent = s.model;
     document.getElementById('s-mode').textContent = s.mode;
     document.getElementById('s-project').textContent = s.project || 'None';
     document.getElementById('s-memory').textContent = s.memory_facts;
+    // Reactor pulse: deeper when Tier 3 active
+    const reactor = document.getElementById('reactor');
+    reactor.className = 'reactor' + (s.tier === 3 ? ' deep' : '');
   } catch(e) {
     document.getElementById('s-brain').textContent = 'Offline';
     document.getElementById('s-brain').className = 'value err';
@@ -120,7 +233,7 @@ async function refresh() {
 
   // Costs
   try {
-    const c = await (await fetch(`${API}/costs`)).json();
+    const c = await (await authFetch(`${API}/costs`)).json();
     document.getElementById('c-today').textContent = `$${c.today_usd.toFixed(4)}`;
     document.getElementById('c-limit').textContent = `$${c.daily_limit_usd.toFixed(2)}`;
     const pct = Math.min((c.today_usd / c.daily_limit_usd) * 100, 100);
@@ -133,9 +246,44 @@ async function refresh() {
     document.getElementById('c-recent').innerHTML = recent || 'No cloud calls yet.';
   } catch(e) {}
 
+  // Connectors
+  try {
+    const connectors = await (await authFetch(`${API}/connectors`)).json();
+    const active = connectors.filter(c => c.status === 'active').length;
+    document.getElementById('s-connectors').textContent = `${active} active / ${connectors.length} total`;
+
+    const grid = document.getElementById('connector-grid');
+    grid.innerHTML = connectors.map(c => {
+      const statusBadge = c.status === 'active' ? '<span class="badge ok">Active</span>'
+        : c.status === 'stub' ? '<span class="badge stub">Stub</span>'
+        : '<span class="badge available">Available</span>';
+      const actionBtn = c.status === 'active'
+        ? `<button class="sm danger" onclick="toggleConnector('${c.name}', false)">Disable</button>`
+        : c.status !== 'stub'
+        ? `<button class="sm" onclick="toggleConnector('${c.name}', true)">Enable</button>`
+        : '';
+      return `<div class="connector-tile">
+        <div class="c-name">${c.name}</div>
+        <div class="c-cat">${c.category}</div>
+        <div class="c-desc">${c.description.slice(0, 60)}</div>
+        ${statusBadge} ${actionBtn}
+      </div>`;
+    }).join('');
+  } catch(e) {
+    document.getElementById('connector-grid').innerHTML = '<div style="color:var(--dim)">Could not load connectors.</div>';
+  }
+
+  // Briefing
+  try {
+    const b = await (await authFetch(`${API}/briefing/today`)).json();
+    if (b.briefing) {
+      document.getElementById('briefing-content').textContent = b.briefing;
+    }
+  } catch(e) {}
+
   // Skills
   try {
-    const sk = await (await fetch(`${API}/skills`)).json();
+    const sk = await (await authFetch(`${API}/skills`)).json();
     document.getElementById('skills-body').innerHTML = sk.map(s =>
       `<tr><td style="color:var(--cyan)">${s.name}</td><td>${s.tier}</td><td style="color:var(--dim)">${s.triggers.slice(0,2).join(', ')}</td></tr>`
     ).join('');
@@ -143,7 +291,7 @@ async function refresh() {
 
   // Hooks
   try {
-    const hk = await (await fetch(`${API}/hooks`)).json();
+    const hk = await (await authFetch(`${API}/hooks`)).json();
     document.getElementById('hooks-body').innerHTML = hk.length ? hk.map(h =>
       `<div class="stat"><span class="label">${h.description}</span><span class="badge ${h.enabled ? 'ok' : 'off'}">${h.enabled ? 'ON' : 'OFF'}</span></div>`
     ).join('') : '<div style="color:var(--dim)">No hooks registered.</div>';
@@ -151,7 +299,7 @@ async function refresh() {
 
   // Backups
   try {
-    const bk = await (await fetch(`${API}/backups`)).json();
+    const bk = await (await authFetch(`${API}/backups`)).json();
     document.getElementById('backup-list').innerHTML = bk.slice(0, 5).map(b =>
       `<div class="stat"><span class="label">${b.name}</span><span class="value">${b.size_mb} MB</span></div>`
     ).join('') || '<div style="color:var(--dim)">No backups yet.</div>';
@@ -159,7 +307,7 @@ async function refresh() {
 
   // WhatsApp
   try {
-    const wa = await (await fetch(`${API}/whatsapp/status`)).json();
+    const wa = await (await authFetch(`${API}/whatsapp/status`)).json();
     const badge = document.getElementById('wa-badge');
     if (!wa.enabled) { badge.textContent = 'Disabled'; badge.className = 'badge off'; }
     else if (wa.connected) { badge.textContent = 'Connected'; badge.className = 'badge ok'; }
@@ -167,8 +315,27 @@ async function refresh() {
   } catch(e) {}
 }
 
+async function toggleConnector(name, enable) {
+  const url = enable ? `${API}/connectors/install` : `${API}/connectors/uninstall`;
+  await authFetch(url, {
+    method: 'POST', headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({ name })
+  });
+  refresh();
+}
+
+async function composeBriefing() {
+  document.getElementById('briefing-content').textContent = 'Composing briefing...';
+  try {
+    await authFetch(`${API}/briefing/compose`, { method: 'POST' });
+    refresh();
+  } catch(e) {
+    document.getElementById('briefing-content').textContent = 'Failed to compose briefing.';
+  }
+}
+
 async function doBackup() {
-  const resp = await fetch(`${API}/api/action`, {
+  const resp = await authFetch(`${API}/api/action`, {
     method: 'POST', headers: {'Content-Type':'application/json'},
     body: JSON.stringify({action: 'backup_now'})
   });
@@ -177,6 +344,8 @@ async function doBackup() {
   refresh();
 }
 
+// Init
+connectWS();
 refresh();
 setInterval(refresh, 10000);
 </script>

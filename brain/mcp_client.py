@@ -150,6 +150,13 @@ class MCPManager:
         from brain.tools import web_search
         return web_search(query)
 
+    def register_external_tools(self, tools: list[dict]):
+        """Register tools from external sources (e.g. connectors)."""
+        for t in tools:
+            if t["name"] not in self.tools:
+                self.tools[t["name"]] = t
+                logger.info("Registered external tool: %s", t["name"])
+
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
         return [
             {
