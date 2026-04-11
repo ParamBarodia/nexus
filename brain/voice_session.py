@@ -27,7 +27,13 @@ FOLLOW_UP_WINDOW = 5.0  # seconds to listen for follow-up without wake word
 
 def record_until_silence(max_duration: float = 30.0) -> np.ndarray:
     """Record from microphone until silence detected by VAD."""
-    import sounddevice as sd
+    try:
+        import sounddevice as sd
+    except Exception as e:
+        logger.error("sounddevice not available: %s", e)
+        print("[JARVIS] Audio input library not available. Install sounddevice.")
+        return np.array([], dtype=np.float32)
+
     from brain.stt import has_speech
 
     chunks = []
@@ -62,8 +68,12 @@ def record_until_silence(max_duration: float = 30.0) -> np.ndarray:
                     break
                 if silence_start and (time.time() - silence_start) > SILENCE_TIMEOUT:
                     break
+    except sd.PortAudioError as e:
+        logger.error("Microphone access denied or unavailable: %s", e)
+        print("\n[JARVIS] Sir, I cannot access the microphone. Please check Windows Privacy Settings > Microphone.")
     except Exception as e:
         logger.error("Recording failed: %s", e)
+        print(f"\n[JARVIS] Recording error: {e}")
 
     if not chunks:
         return np.array([], dtype=np.float32)

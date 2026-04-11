@@ -37,10 +37,16 @@ config = {
 # Initialize Mem0
 # Note: user_id is the primary key for the person JARVIS serves (Param)
 USER_ID = "param"
-m = Memory.from_config(config)
+try:
+    m = Memory.from_config(config)
+except Exception as _init_err:
+    mem_logger.error("Mem0 init failed (embedding model missing?): %s", _init_err)
+    m = None
 
 def add_memory(message: str, role: str):
     """Store raw fact from conversation."""
+    if m is None:
+        return
     try:
         m.add(message, user_id=USER_ID, metadata={"role": role})
         mem_logger.info("Memory added from %s: %s", role, message[:100])
@@ -49,6 +55,9 @@ def add_memory(message: str, role: str):
 
 def get_memories(query: str):
     """Retrieve top N relevant memories."""
+    if m is None:
+        mem_logger.warning("Mem0 not initialized — returning empty memories")
+        return []
     try:
         results = m.search(query, user_id=USER_ID, limit=5)
         # Ensure results is a list of dicts
@@ -65,6 +74,8 @@ def get_memories(query: str):
 
 def get_all_memories():
     """Return all stored facts for stats/CLI."""
+    if m is None:
+        return []
     try:
         return m.get_all(user_id=USER_ID)
     except Exception as e:

@@ -55,9 +55,11 @@ client.on("message", async (msg) => {
 
   console.log(`[Bridge] Message from ${from}: ${body.substring(0, 100)}`);
 
-  // Whitelist check
+  // Whitelist check — exact match after normalizing (strip +, spaces, dashes)
+  const normalize = (n) => n.replace(/[\s\-+]/g, "");
   if (ALLOWED_NUMBERS.length > 0) {
-    const allowed = ALLOWED_NUMBERS.some((n) => from.includes(n.replace("+", "")));
+    const normalizedFrom = normalize(from);
+    const allowed = ALLOWED_NUMBERS.some((n) => normalizedFrom === normalize(n));
     if (!allowed) {
       console.log(`[Bridge] Blocked: ${from} not in whitelist`);
       return;

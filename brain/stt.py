@@ -41,16 +41,28 @@ def _get_vad():
 
 
 def _get_whisper():
-    """Load Faster-Whisper model (lazy)."""
+    """Load Faster-Whisper model (lazy). Tries CUDA, falls back to CPU."""
     global _whisper_model
     if _whisper_model is None:
         from faster_whisper import WhisperModel
-        _whisper_model = WhisperModel(
-            STT_MODEL,
-            device="cuda",
-            compute_type="float16",
-        )
-        logger.info("Faster-Whisper loaded: %s (CUDA)", STT_MODEL)
+        # Try CUDA first
+        try:
+            _whisper_model = WhisperModel(
+                STT_MODEL,
+                device="cuda",
+                compute_type="float16",
+            )
+            logger.info("Faster-Whisper loaded: %s (CUDA)", STT_MODEL)
+        except Exception as e:
+            logger.warning("CUDA unavailable (%s), falling back to CPU", e)
+            # Use smaller model on CPU — large-v3 is unusably slow on CPU
+            cpu_model = "base" if "large" in STT_MODEL else STT_MODEL
+            _whisper_model = WhisperModel(
+                cpu_model,
+                device="cpu",
+                compute_type="int8",
+            )
+            logger.info("Faster-Whisper loaded: %s (CPU, int8)", cpu_model)
     return _whisper_model
 
 

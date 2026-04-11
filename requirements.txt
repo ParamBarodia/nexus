@@ -20,7 +20,6 @@ openwakeword
 sounddevice
 pyttsx3
 edge-tts
-pygame
 # Search
 tavily-python
 # Hooks
@@ -40,5 +39,7 @@ pdfplumber
 pycaw
 plyer
 screen-brightness-control
+Pillow
+comtypes
 # HUD
 PyQt6

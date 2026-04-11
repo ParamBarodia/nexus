@@ -52,11 +52,15 @@ class EventBus:
             callbacks = list(self._subscribers.get(event.event_type, []))
             # Also fire for wildcard subscribers
             callbacks += list(self._subscribers.get("*", []))
+        # Run each callback in a daemon thread so slow hooks don't block
+        import threading
         for cb in callbacks:
-            try:
-                cb(event)
-            except Exception as e:
-                logger.error("Event handler %s failed: %s", cb.__name__, e)
+            def _run(callback=cb):
+                try:
+                    callback(event)
+                except Exception as e:
+                    logger.error("Event handler %s failed: %s", callback.__name__, e)
+            threading.Thread(target=_run, daemon=True).start()
 
     def subscribe_all(self, callback: Callable[[Event], None]):
         """Subscribe to all events."""

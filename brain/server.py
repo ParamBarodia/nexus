@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Header, WebSocket, WebSocketDisconnect, Depends, Request
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from sse_starlette.sse import EventSourceResponse
@@ -74,10 +74,16 @@ async def verify_token(authorization: Optional[str] = Header(None)):
     if BEARER_TOKEN and (not authorization or authorization != f"Bearer {BEARER_TOKEN}"):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+async def verify_localhost(request: Request):
+    """Allow only localhost requests (for WhatsApp bridge)."""
+    client = request.client.host if request.client else ""
+    if client not in ("127.0.0.1", "::1", "localhost"):
+        raise HTTPException(status_code=403, detail="Localhost only")
+
 # --- Core ---
 
 @app.get("/status")
-async def status():
+async def status(_=Depends(verify_token)):
     active_proj = projects.get_active()
     return {
         "ok": True,
@@ -88,7 +94,7 @@ async def status():
     }
 
 @app.post("/chat")
-async def chat(request: dict):
+async def chat(request: dict, _=Depends(verify_token)):
     user_message = request.get("message", "")
     force_tier = request.get("tier")
 
@@ -101,79 +107,79 @@ async def chat(request: dict):
 # --- Projects ---
 
 @app.get("/projects")
-async def list_projs():
+async def list_projs(_=Depends(verify_token)):
     return projects.list_projects()
 
 @app.post("/projects/add")
-async def add_proj(req: dict):
+async def add_proj(req: dict, _=Depends(verify_token)):
     success = projects.add_project(req["name"], req["path"], req.get("description", ""))
     return {"ok": success}
 
 @app.post("/projects/use")
-async def use_proj(req: dict):
+async def use_proj(req: dict, _=Depends(verify_token)):
     success = projects.set_active(req["project_id"])
     return {"ok": success}
 
 @app.get("/projects/scan/{project_id}")
-async def scan_proj(project_id: str):
+async def scan_proj(project_id: str, _=Depends(verify_token)):
     return projects.scan_project(project_id)
 
 # --- Mode ---
 
 @app.post("/mode")
-async def set_mode(req: dict):
+async def set_mode(req: dict, _=Depends(verify_token)):
     success = modes.set_mode(req["mode"])
     return {"ok": success}
 
 # --- Memory ---
 
 @app.get("/memory/stats")
-async def memory_stats():
+async def memory_stats(_=Depends(verify_token)):
     return {"count": len(get_all_memories())}
 
 # --- Proactive ---
 
 @app.post("/proactive/briefing")
-async def trigger_briefing():
+async def trigger_briefing(_=Depends(verify_token)):
     await proactive.morning_briefing()
     return {"ok": True}
 
 # --- Backup ---
 
 @app.post("/backup")
-async def do_backup():
+async def do_backup(_=Depends(verify_token)):
     result = backup.backup_all()
     return {"ok": True, "result": result}
 
 @app.post("/export")
-async def do_export():
+async def do_export(_=Depends(verify_token)):
     result = backup.export_human_readable()
     return {"ok": True, "result": result}
 
 @app.get("/backups")
-async def get_backups():
+async def get_backups(_=Depends(verify_token)):
     return backup.list_backups()
 
 @app.post("/restore")
-async def do_restore(req: dict):
+async def do_restore(req: dict, _=Depends(verify_token)):
     result = backup.restore_from_backup(req["path"])
     return {"ok": True, "result": result}
 
 # --- Skills ---
 
 @app.get("/skills")
-async def get_skills_list():
+async def get_skills_list(_=Depends(verify_token)):
     return [{"name": s["name"], "description": s["description"],
              "triggers": s["triggers"], "tier": s["tier"]} for s in get_skills()]
 
 # --- Hooks ---
 
 @app.get("/hooks")
-async def get_hooks():
+async def get_hooks(_=Depends(verify_token)):
     return list_hooks()
 
 @app.post("/hooks/add")
-async def create_hook(req: dict):
+async def create_hook(req: dict, _=Depends(verify_token)):
     hook = add_hook(
         trigger=req["trigger"],
         description=req["description"],
@@ -184,18 +190,18 @@ async def create_hook(req: dict):
     return {"ok": True, "hook": hook}
 
 @app.post("/hooks/toggle")
-async def toggle_hook_endpoint(req: dict):
+async def toggle_hook_endpoint(req: dict, _=Depends(verify_token)):
     result = toggle_hook(req["hook_id"])
     return {"ok": result is not None, "enabled": result}
 
 @app.post("/hooks/remove")
-async def remove_hook_endpoint(req: dict):
+async def remove_hook_endpoint(req: dict, _=Depends(verify_token)):
     return {"ok": remove_hook(req["hook_id"])}
 
 # --- Costs ---
 
 @app.get("/costs")
-async def get_costs():
+async def get_costs(_=Depends(verify_token)):
     from brain.advisor_executor import _get_today_spend, DAILY_LIMIT_USD, COSTS_LOG
     today_spend = _get_today_spend()
     history = []
@@ -214,7 +220,7 @@ async def get_costs():
 # --- WhatsApp ---
 
 @app.get("/whatsapp/status")
-async def wa_status():
+async def wa_status(_=Depends(verify_token)):
     if not WHATSAPP_ENABLED:
         return {"enabled": False, "connected": False}
     from brain.whatsapp.client import get_status, get_qr
@@ -225,7 +231,7 @@ async def wa_status():
     return status
 
 @app.post("/whatsapp/incoming")
-async def wa_incoming(req: dict):
+async def wa_incoming(req: dict, _=Depends(verify_localhost)):
     """Receive incoming WhatsApp message from Node bridge, process, and return reply."""
     from_number = req.get("from", "")
     body = req.get("body", "")
@@ -290,7 +296,7 @@ _event_bus.subscribe_all(_on_ws_event)
 # --- Briefing ---
 
 @app.get("/briefing/today")
-async def get_briefing():
+async def get_briefing(_=Depends(verify_token)):
     try:
         from brain.briefing.context_engine import get_todays_briefing
         content = get_todays_briefing()
@@ -299,7 +305,7 @@ async def get_briefing():
         return {"briefing": None}
 
 @app.get("/briefing/reflection")
-async def get_reflection():
+async def get_reflection(_=Depends(verify_token)):
     from datetime import date
     from pathlib import Path as _Path
     reflection_file = _Path(r"C:\jarvis\data\reflections") / f"{date.today().isoformat()}.md"
@@ -308,7 +314,7 @@ async def get_reflection():
     return {"reflection": None}
 
 @app.post("/briefing/compose")
-async def compose_briefing():
+async def compose_briefing(_=Depends(verify_token)):
     try:
         from brain.briefing.context_engine import prefetch_all, compose_briefing as _compose
         from brain.memory_mem0 import get_memories as _get_mems
@@ -322,26 +328,26 @@ async def compose_briefing():
 # --- Connectors ---
 
 @app.get("/connectors")
-async def list_connectors():
+async def list_connectors(_=Depends(verify_token)):
     return connector_registry.list_available()
 
 @app.post("/connectors/install")
-async def install_connector(req: dict):
+async def install_connector(req: dict, _=Depends(verify_token)):
     return connector_registry.install(req["name"], req.get("credentials"))
 
 @app.post("/connectors/uninstall")
-async def uninstall_connector(req: dict):
+async def uninstall_connector(req: dict, _=Depends(verify_token)):
     return connector_registry.uninstall(req["name"])
 
 @app.get("/connectors/{name}/health")
-async def connector_health(name: str):
+async def connector_health(name: str, _=Depends(verify_token)):
     c = connector_registry.get(name)
     if not c:
         raise HTTPException(404, f"Connector '{name}' not active")
     return await c.health_check()
 
 @app.post("/connectors/{name}/fetch")
-async def connector_fetch(name: str, req: dict = None):
+async def connector_fetch(name: str, req: dict = None, _=Depends(verify_token)):
     c = connector_registry.get(name)
     if not c:
         raise HTTPException(404, f"Connector '{name}' not active")
@@ -350,7 +356,7 @@ async def connector_fetch(name: str, req: dict = None):
 # --- Dashboard Actions ---
 
 @app.post("/api/action")
-async def dashboard_action(req: dict):
+async def dashboard_action(req: dict, _=Depends(verify_token)):
     action = req.get("action")
     if action == "backup_now":
         result = backup.backup_all()
