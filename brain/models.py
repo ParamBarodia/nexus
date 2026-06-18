@@ -16,9 +16,9 @@ class ModelConfig(BaseModel):
     model_name: str
     provider: str  # "ollama" or "anthropic"
 
-TIER1_MODEL = os.getenv("TIER1_MODEL", "gemma2:2b")
-TIER2_MODEL = os.getenv("TIER2_MODEL", "qwen2.5:7b")
-TIER3_LOCAL_MODEL = os.getenv("TIER3_LOCAL_MODEL", "qwen2.5:14b")
+TIER1_MODEL = os.getenv("TIER1_MODEL", "llama3.2:3b")
+TIER2_MODEL = os.getenv("TIER2_MODEL", "gemma3:4b")
+TIER3_LOCAL_MODEL = os.getenv("TIER3_LOCAL_MODEL", "hermes3:8b")
 TIER3_CLOUD_ENABLED = os.getenv("TIER3_CLOUD_ENABLED", "false").lower() == "true"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 TIER3_MODE = os.getenv("TIER3_MODE", "ask_user")
@@ -33,7 +33,7 @@ def get_model_for_tier(tier: int, preference: Optional[str] = None) -> ModelConf
         if preference == "local":
             return ModelConfig(tier=3, model_name=TIER3_LOCAL_MODEL, provider="ollama")
         if TIER3_CLOUD_ENABLED and ANTHROPIC_API_KEY and preference != "local":
-            return ModelConfig(tier=3, model_name=os.getenv("TIER3_CLOUD_MODEL", "claude-sonnet-4-5-20250929"), provider="anthropic")
+            return ModelConfig(tier=3, model_name=os.getenv("TIER3_CLOUD_MODEL", "claude-sonnet-4-6"), provider="anthropic")
         return ModelConfig(tier=3, model_name=TIER3_LOCAL_MODEL, provider="ollama")
     
     # Default to tier 1

@@ -1,30 +1,26 @@
 {
-  "name": "Param Barodia",
-  "first_name": "Param",
-  "age": 23,
-  "city": "Ahmedabad, India",
-  "role": "Research Scientist & Co-founder, Satani Research Centre",
+  "name": "Your Name",
+  "first_name": "Your",
+  "age": 0,
+  "city": "Your City",
+  "role": "Your role / title",
   "projects": [
-    "Satani Research Centre — biohybrid neurons + AI research",
-    "ClinomicLabs — clinical AI SaaS, in production with 1 pilot",
-    "Jarvis — this personal AI assistant",
-    "Website builds for friends",
-    "Remotion-based reel editor (half-built)"
+    "Project one — short description",
+    "Project two — short description"
   ],
   "ambitions": [
-    "Financial and intellectual freedom",
-    "Build at Elon Musk scale",
-    "Contribute to neuroscience-AI intersection"
+    "An ambition or long-term goal",
+    "Another ambition"
   ],
   "personality_notes": [
-    "Wants brutal honesty, not validation",
-    "Frustrated by context switching and decision paralysis",
-    "Researcher background in neuroscience",
-    "Prefers structured responses, decisions over options"
+    "How you want JARVIS to talk to you (e.g. brutal honesty, not validation)",
+    "What frustrates you (e.g. context switching, decision paralysis)",
+    "Your background",
+    "Preferences (e.g. decisions over options, structured responses)"
   ],
   "preferences": {
     "address_as": "Sir",
-    "occasional_alt": "Param",
-    "tone": "formal, precise, eloquently dry, highly analytical, subtly sarcastic"
+    "occasional_alt": "Your first name",
+    "tone": "formal, precise, analytical"
   }
 }

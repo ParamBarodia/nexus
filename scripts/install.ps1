@@ -32,12 +32,12 @@ $envFile = Join-Path $jarvisRoot ".env"
 if (-not (Test-Path $envFile)) {
     $token = [guid]::NewGuid().ToString().Replace("-", "")
     $envContent = @"
-TIER1_MODEL=gemma2:2b
-TIER2_MODEL=qwen2.5:7b
-TIER3_LOCAL_MODEL=qwen2.5:14b
+TIER1_MODEL=llama3.2:3b
+TIER2_MODEL=gemma3:4b
+TIER3_LOCAL_MODEL=hermes3:8b
 TIER3_CLOUD_ENABLED=false
 ANTHROPIC_API_KEY=
-TIER3_CLOUD_MODEL=claude-sonnet-4-5-20250929
+TIER3_CLOUD_MODEL=claude-sonnet-4-6
 TIER3_CLOUD_DAILY_LIMIT_USD=2.00
 TIER3_MODE=ask_user
 NTFY_TOPIC=nexus-param-$([guid]::NewGuid().ToString().Substring(0,8))
@@ -95,7 +95,7 @@ Write-Host "  Dependencies installed." -ForegroundColor Green
 
 # [5/10] Ollama models
 Write-Host "[5/10] Pulling Ollama models (this may take a while)..." -ForegroundColor Yellow
-$models = @("gemma2:2b", "qwen2.5:7b", "qwen2.5:14b", "nomic-embed-text")
+$models = @("llama3.2:3b", "gemma3:4b", "hermes3:8b", "nomic-embed-text")
 foreach ($model in $models) {
     Write-Host "  Pulling $model..." -ForegroundColor Gray
     ollama pull $model
@@ -152,6 +152,11 @@ if ($currentPath -notlike "*$clientDir*") {
     Write-Host "  Already in PATH." -ForegroundColor Green
 }
 
+# [8.5/10] First-run profile setup (writes data\*.local.json — your private data)
+Write-Host "[8.5/10] First-run profile setup..." -ForegroundColor Yellow
+Write-Host "  Fill in your details (press Enter to skip any field)." -ForegroundColor Gray
+& $venvPython (Join-Path $clientDir "jarvis.py") --init
+
 # [9/10] Start brain server
 Write-Host "[9/10] Starting brain server..." -ForegroundColor Yellow
 Start-Process -FilePath $venvPython -ArgumentList "-m uvicorn brain.server:app --host 127.0.0.1 --port 8765 --log-level info" -WorkingDirectory $jarvisRoot -WindowStyle Hidden
@@ -184,6 +189,9 @@ Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Commands (open a NEW terminal):" -ForegroundColor White
 Write-Host "  jarvis                Interactive chat" -ForegroundColor Cyan
+Write-Host "  jarvis --init         Re-run profile setup (your data)" -ForegroundColor Gray
+Write-Host "  jarvis /hermes ""...""  Delegate to Hermes agent" -ForegroundColor Gray
+Write-Host "  jarvis /verify ""...""  Multi-model council check" -ForegroundColor Gray
 Write-Host "  jarvis --status       System health" -ForegroundColor Gray
 Write-Host "  jarvis --connectors   List connectors" -ForegroundColor Gray
 Write-Host "  jarvis --setup        Configure API keys" -ForegroundColor Gray

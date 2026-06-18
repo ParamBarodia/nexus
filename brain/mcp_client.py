@@ -105,6 +105,66 @@ class MCPManager:
             "handler": lambda number, message: wa_send(number, message) if wa_connected() else "WhatsApp bridge is not running.",
         }
 
+        # External agent bridges: Hermes Agent + multi-model Council
+        from brain.tools import call_hermes, council_verify
+        self.tools["hermes_delegate"] = {
+            "name": "hermes_delegate",
+            "description": "Delegate a task to the local Hermes Agent (a separate autonomous agent with 40+ tools running on local models). Use for tasks needing broad tool use or a second autonomous worker.",
+            "parameters": {
+                "type": "object",
+                "properties": {"task": {"type": "string", "description": "The task to delegate to Hermes."}},
+                "required": ["task"],
+            },
+            "handler": lambda task: call_hermes(task),
+        }
+        self.tools["council_verify"] = {
+            "name": "council_verify",
+            "description": "Verify a claim, answer, or piece of code with a multi-model Council (several models cross-check to catch bugs/errors). Use when correctness matters and a second opinion is warranted.",
+            "parameters": {
+                "type": "object",
+                "properties": {"content": {"type": "string", "description": "The claim or code to verify."}},
+                "required": ["content"],
+            },
+            "handler": lambda content: council_verify(content),
+        }
+
+        # Life-domain tracker: read/update Param's four fronts (research/job_hunt/phd/content)
+        from brain.domains import get_domain, get_domains, update_domain, summary as _domains_summary
+
+        def _domain_status(domain=None):
+            if domain:
+                d = get_domain(domain)
+                return json.dumps(d) if d else f"Unknown domain '{domain}'. Use: research, job_hunt, phd, content."
+            return _domains_summary() or "No domains tracked."
+
+        self.tools["domain_status"] = {
+            "name": "domain_status",
+            "description": "Get the current next-action / deadline / staleness for Param's life domains (research, job_hunt, phd, content). Omit 'domain' for a summary of all.",
+            "parameters": {
+                "type": "object",
+                "properties": {"domain": {"type": "string", "description": "research | job_hunt | phd | content (optional)"}},
+                "required": [],
+            },
+            "handler": _domain_status,
+        }
+        self.tools["domain_update"] = {
+            "name": "domain_update",
+            "description": "Update a life domain's next action, deadline (YYYY-MM-DD), notes, or status. Use when Param decides or completes the next step on research/job_hunt/phd/content.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "domain": {"type": "string", "description": "research | job_hunt | phd | content"},
+                    "next_action": {"type": "string"},
+                    "deadline": {"type": "string", "description": "YYYY-MM-DD or empty to clear"},
+                    "notes": {"type": "string"},
+                    "status": {"type": "string"},
+                },
+                "required": ["domain"],
+            },
+            "handler": lambda domain, next_action=None, deadline=None, notes=None, status=None: json.dumps(
+                update_domain(domain, next_action, deadline, notes, status)),
+        }
+
         # Load India MCP Servers (will skip whatsapp_send stub since we already registered the real one)
         self._load_india_mcp()
 

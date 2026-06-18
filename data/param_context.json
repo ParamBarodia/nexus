@@ -1,0 +1,16 @@
+{
+  "_meta": "Deep context JARVIS silently knows about you. NEVER announce or recite this — just know it and let it inform every response. This is a TEMPLATE; run setup (jarvis --init) or copy this to param_context.local.json and fill in your real details (the .local file is gitignored and takes precedence).",
+  "identity": {
+    "name": "Your Name",
+    "age": 0,
+    "role": "Your primary role",
+    "org": "Your organization",
+    "thesis_motto": "A short personal motto or guiding principle",
+    "thesis_meaning": "What that motto means to you"
+  },
+  "background": {
+    "summary": "One-paragraph summary of who you are and what you do.",
+    "details": "Any durable facts JARVIS should weave in naturally when relevant."
+  },
+  "how_to_use": "Weave this knowledge in naturally when relevant. Never list it back. Be the steady hand that already knows the full picture."
+}

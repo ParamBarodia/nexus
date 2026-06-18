@@ -144,6 +144,11 @@ async def trigger_briefing(_=Depends(verify_token)):
     await proactive.morning_briefing()
     return {"ok": True}
 
+@app.post("/proactive/domains_check")
+async def trigger_domains_check(_=Depends(verify_token)):
+    """Nudge: notify about any overdue life-domain actions (used by the Signal Monitor)."""
+    return proactive.domains_check()
+
 # --- Backup ---
 
 @app.post("/backup")
@@ -365,6 +370,66 @@ async def dashboard_action(req: dict, _=Depends(verify_token)):
         result = toggle_hook(req.get("hook_id", ""))
         return {"ok": result is not None, "enabled": result}
     return {"ok": False, "error": "Unknown action"}
+
+# --- Root dashboard (the 4-card Nexus panel) ---
+
+NEXUS_PANEL = Path(r"C:\jarvis\dashboard\nexus.html")
+
+@app.get("/")
+async def root_dashboard():
+    """Serve the 4-card Nexus dashboard at localhost:8765/."""
+    if NEXUS_PANEL.exists():
+        return FileResponse(str(NEXUS_PANEL))
+    return JSONResponse({"error": "dashboard not found"}, status_code=404)
+
+@app.get("/api/status")
+async def api_status():
+    """Lightweight status for the dashboard (polled every 60s; no auth needed locally)."""
+    try:
+        active_proj = projects.get_active()
+        return {
+            "ok": True,
+            "model": TIER1_MODEL,
+            "mode": modes.get_current_mode(),
+            "project": active_proj["name"] if active_proj else "nexus",
+            "memory_facts": len(get_all_memories()),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@app.get("/api/briefing")
+async def api_briefing():
+    """Today's briefing (top line) for the dashboard — no auth, localhost only."""
+    try:
+        from brain.briefing.context_engine import get_todays_briefing
+        b = get_todays_briefing()
+        return {"ok": True, "briefing": b, "headline": (b.strip().split("\n")[0] if b else None)}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@app.get("/api/domains")
+async def api_domains():
+    """Live life-domain state (next action + staleness/overdue) for the dashboard cards."""
+    try:
+        import brain.domains as domains
+        return {"ok": True, "domains": domains.get_domains()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@app.post("/api/chat")
+async def api_chat(req: dict):
+    """Non-streaming chat for the dashboard. Returns the full reply as JSON."""
+    user_message = req.get("message", "")
+    if not user_message:
+        return {"ok": False, "reply": "(empty message)"}
+    parts: list[str] = []
+    try:
+        async for chunk in stream_chat(user_message, force_tier=req.get("tier")):
+            if chunk.get("type") in ("token", "text"):
+                parts.append(chunk.get("content", ""))
+    except Exception as e:
+        return {"ok": False, "reply": f"Error: {e}"}
+    return {"ok": True, "reply": "".join(parts).strip() or "(no response)"}
 
 
 if __name__ == "__main__":

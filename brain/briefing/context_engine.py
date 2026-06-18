@@ -12,13 +12,16 @@ BRIEFING_DIR = Path(r"C:\jarvis\data\briefings")
 BRIEFING_DIR.mkdir(parents=True, exist_ok=True)
 
 NARRATIVE_PROMPT = """\
-You are JARVIS, an AI assistant speaking to Sir (your principal).
-Given the following data gathered from multiple intelligence sources,
-compose a natural, conversational morning briefing. Weave the information
-together into a flowing narrative — do NOT use bullet lists. Open with the
-date and a warm greeting, then move through the most important items:
-world events, markets, weather, project status, calendar, and anything
-else noteworthy. Close with a forward-looking remark about the day ahead.
+You are JARVIS, an AI assistant speaking to Sir (your principal, Param).
+Compose a natural, conversational morning briefing as flowing prose — NOT bullet lists.
+Open with the date and a brief greeting. Then LEAD with what Param should DO today across
+his four fronts (Research, Job Hunt, PhD, Content) using the PRIORITIES below — name the
+single next action per front, and call out anything OVERDUE first. After the priorities,
+weave in any noteworthy source data (new papers, world/markets/weather). Close with one
+crisp forward-looking remark. Be the steady hand: surface decisions, not menus.
+
+--- TODAY'S PRIORITIES (Param's live domains) ---
+{domains}
 
 --- SOURCE DATA ---
 {source_data}
@@ -54,12 +57,19 @@ async def compose_briefing(prefetched: dict, memories: list) -> str:
         for m in memories
     ) if memories else "No prior memories loaded."
 
-    prompt = NARRATIVE_PROMPT.format(source_data=source_data, memories=memory_text)
+    # Live life-domain priorities (next action per front, overdue flagged)
+    try:
+        from brain.domains import summary as _domain_summary
+        domains_text = _domain_summary() or "No domains tracked."
+    except Exception:
+        domains_text = "No domains tracked."
 
-    logger.info("Sending briefing prompt to qwen2.5:14b (%d chars)...", len(prompt))
+    prompt = NARRATIVE_PROMPT.format(domains=domains_text, source_data=source_data, memories=memory_text)
+
+    logger.info("Sending briefing prompt to hermes3:8b (%d chars)...", len(prompt))
     try:
         response = ollama.chat(
-            model="qwen2.5:14b",
+            model="hermes3:8b",
             messages=[{"role": "user", "content": prompt}],
         )
         briefing_text = response["message"]["content"]

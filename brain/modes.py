@@ -12,19 +12,19 @@ MODES = {
         "priority_projects": []
     },
     "office": {
-        "description": "Satani Research & ClinomicLabs work.",
-        "prompt_extension": "Focus on research efficiency, clinic pilots, and neuro-AI intersections. Be strictly analytical.",
-        "priority_projects": ["satani", "clinomic"]
+        "description": "Primary work / job.",
+        "prompt_extension": "Focus on work efficiency, deliverables, and deep-work priorities. Be strictly analytical.",
+        "priority_projects": []
     },
     "content": {
         "description": "Content creation and social media.",
         "prompt_extension": "Focus on clarity, hooks, and technical storytelling. Be slightly more creative while maintaining the JARVIS persona.",
-        "priority_projects": ["remotion"]
+        "priority_projects": []
     },
     "freelance": {
         "description": "Client work and external projects.",
         "prompt_extension": "Focus on deadlines, client requirements, and high-quality deliverables.",
-        "priority_projects": ["website-builds"]
+        "priority_projects": []
     }
 }
 

@@ -23,7 +23,8 @@ class ArxivConnector(BaseConnector):
             category = params.get("category", "cs.AI")
             query = f"cat:{category}"
         else:
-            query = params.get("query", "large language models")
+            # Default tuned to Param's field (biohybrid neurons / MEA / dopamine / plasticity).
+            query = params.get("query", "biohybrid neural microelectrode dopamine plasticity")
 
         resp = await http.get(
             "https://export.arxiv.org/api/query",

@@ -7,3 +7,6 @@ data/
 .env
 .vscode/
 .idea/
+
+# Personal data overrides — NEVER commit (these hold real user info)
+*.local.json

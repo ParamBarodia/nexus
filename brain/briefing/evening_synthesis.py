@@ -52,10 +52,10 @@ async def compose_reflection(registry) -> str:
 
     prompt = REFLECTION_PROMPT.format(morning_briefing=morning, events=events_text)
 
-    logger.info("Sending reflection prompt to qwen2.5:14b (%d chars)...", len(prompt))
+    logger.info("Sending reflection prompt to hermes3:8b (%d chars)...", len(prompt))
     try:
         response = ollama.chat(
-            model="qwen2.5:14b",
+            model="hermes3:8b",
             messages=[{"role": "user", "content": prompt}],
         )
         reflection_text = response["message"]["content"]

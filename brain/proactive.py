@@ -56,6 +56,19 @@ def notify(message: str, title: str = "Nexus Briefing"):
     p_logger.info("Notification sent: %s", title)
 
 
+def domains_check():
+    """Flag overdue life-domain actions and send a nudge notification."""
+    from brain.domains import overdue_domains
+    overdue = overdue_domains()
+    if not overdue:
+        p_logger.info("Domain check: nothing overdue.")
+        return {"ok": True, "overdue": 0}
+    lines = [f"{v['label']}: {v['next_action']} (overdue {v['days_overdue']}d)"
+             for v in overdue.values()]
+    notify("Overdue, Sir:\n" + "\n".join(lines), "Nexus — Overdue Actions")
+    return {"ok": True, "overdue": len(overdue), "items": lines}
+
+
 async def prefetch_and_brief():
     """7:30 AM job — prefetch all connectors then compose the morning briefing."""
     from brain.briefing.context_engine import prefetch_all, compose_briefing

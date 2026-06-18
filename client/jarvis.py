@@ -10,6 +10,16 @@ from rich.text import Text
 from rich.panel import Panel
 from rich.table import Table
 
+# Force UTF-8 so model/agent output with special chars doesn't crash the Windows console.
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
+# Ensure the project root is importable so `brain.*` / `hud.*` work from the CLI.
+sys.path.insert(0, r"C:\jarvis")
+
 BRAIN_URL = os.environ.get("JARVIS_BRAIN_URL", "http://localhost:8765")
 console = Console()
 
@@ -207,7 +217,62 @@ def send_message(message: str, tier: int = None) -> None:
             break
 
 
+def run_hermes(task: str) -> None:
+    """jarvis /hermes "task" — delegate directly to the local Hermes Agent."""
+    import subprocess
+    hermes = r"C:\Users\Admin\AppData\Local\hermes\hermes-agent\venv\Scripts\hermes.exe"
+    exe = hermes if os.path.exists(hermes) else "hermes"
+    console.print(f"[dim]Delegating to Hermes: {task}[/dim]")
+    try:
+        r = subprocess.run([exe, "-z", task], cwd=r"C:\Users\Admin",
+                           capture_output=True, text=True, timeout=300,
+                           encoding="utf-8", errors="replace")
+        print((r.stdout or r.stderr or "(no output)").strip())  # plain print: safe for unicode
+    except Exception as e:
+        print(f"Hermes call failed: {e}")
+
+
+def run_verify(content: str) -> None:
+    """jarvis /verify "claim or code" — run the multi-model Council."""
+    import subprocess
+    uv = r"C:\Users\Admin\.local\bin\uv.exe"
+    exe = uv if os.path.exists(uv) else "uv"
+    console.print(f"[dim]Convening the Council on: {content}[/dim]")
+    try:
+        r = subprocess.run([exe, "run", "council.py", content],
+                           cwd=r"C:\Users\Admin\ai-agents",
+                           capture_output=True, text=True, timeout=600,
+                           encoding="utf-8", errors="replace")
+        print((r.stdout or r.stderr or "(no output)").strip())  # plain print: safe for unicode
+    except Exception as e:
+        print(f"Council call failed: {e}")
+
+
+def run_init():
+    """jarvis --init — first-run setup wizard (writes *.local.json)."""
+    from brain.setup import run_setup
+    run_setup()
+
+
 def main():
+    # First-run setup: jarvis --init
+    if len(sys.argv) >= 2 and sys.argv[1] == "--init":
+        run_init()
+        sys.exit(0)
+
+    # Slash-commands: jarvis /hermes "task" | jarvis /verify "content"
+    if len(sys.argv) >= 2 and sys.argv[1] in ("/hermes", "/verify"):
+        cmd = sys.argv[1]
+        rest = " ".join(sys.argv[2:]).strip()
+        if not rest:
+            console.print(f"[yellow]Usage: jarvis {cmd} \"<text>\"[/yellow]")
+            sys.exit(1)
+        if cmd == "/hermes":
+            run_hermes(rest)
+        else:
+            run_verify(rest)
+        sys.exit(0)
+
     parser = argparse.ArgumentParser(description="Nexus CLI")
     parser.add_argument("message", nargs="*", help="Message to send to JARVIS")
     parser.add_argument("--status", action="store_true")

@@ -1,0 +1,31 @@
+{
+  "_meta": "TEMPLATE life-domain tracker. Run setup (jarvis --init) or copy to domains.local.json (gitignored, takes precedence) and set your own fronts/next-actions. Keys here map to the dashboard cards; rename freely. Each domain: next_action, deadline (YYYY-MM-DD or null), notes, status, last_updated.",
+  "research": {
+    "next_action": "Define your single next action for this front",
+    "deadline": null,
+    "notes": "What this front is about.",
+    "status": "active",
+    "last_updated": "2026-01-01"
+  },
+  "job_hunt": {
+    "next_action": "Define your single next action for this front",
+    "deadline": null,
+    "notes": "What this front is about.",
+    "status": "active",
+    "last_updated": "2026-01-01"
+  },
+  "phd": {
+    "next_action": "Define your single next action for this front",
+    "deadline": null,
+    "notes": "What this front is about.",
+    "status": "active",
+    "last_updated": "2026-01-01"
+  },
+  "content": {
+    "next_action": "Define your single next action for this front",
+    "deadline": null,
+    "notes": "What this front is about.",
+    "status": "active",
+    "last_updated": "2026-01-01"
+  }
+}

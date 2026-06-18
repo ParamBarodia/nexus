@@ -1,6 +1,7 @@
 """Tool implementations for Jarvis brain."""
 
 import logging
+import os
 import subprocess
 from datetime import datetime
 from typing import Any
@@ -127,6 +128,51 @@ def run_command(command: str) -> str:
 def get_time() -> str:
     """Return the current date and time formatted nicely."""
     return datetime.now().strftime("%A, %B %d, %Y at %I:%M %p")
+
+
+# --- External agent bridges ------------------------------------------------
+
+HERMES_EXE = r"C:\Users\Admin\AppData\Local\hermes\hermes-agent\venv\Scripts\hermes.exe"
+UV_EXE = r"C:\Users\Admin\.local\bin\uv.exe"
+COUNCIL_DIR = r"C:\Users\Admin\ai-agents"
+
+
+def call_hermes(task: str) -> str:
+    """Delegate a task to the local Hermes Agent (40+ tools, runs on local Ollama)."""
+    try:
+        exe = HERMES_EXE if os.path.exists(HERMES_EXE) else "hermes"
+        result = subprocess.run(
+            [exe, "-z", task],
+            cwd=r"C:\Users\Admin",
+            capture_output=True, text=True, timeout=300,
+            encoding="utf-8", errors="replace",
+        )
+        out = (result.stdout or "").strip() or (result.stderr or "").strip() or "(no output)"
+        return out[:4000]
+    except subprocess.TimeoutExpired:
+        return "Hermes timed out after 300s."
+    except Exception as e:
+        logger.error("call_hermes failed: %s", e)
+        return f"Hermes call failed: {e}"
+
+
+def council_verify(content: str) -> str:
+    """Verify a claim or piece of code with the multi-model Council (returns critiques + final)."""
+    try:
+        exe = UV_EXE if os.path.exists(UV_EXE) else "uv"
+        result = subprocess.run(
+            [exe, "run", "council.py", content],
+            cwd=COUNCIL_DIR,
+            capture_output=True, text=True, timeout=600,
+            encoding="utf-8", errors="replace",
+        )
+        out = (result.stdout or "").strip() or (result.stderr or "").strip() or "(no output)"
+        return out[-4000:]  # the final reviewed answer is at the end
+    except subprocess.TimeoutExpired:
+        return "Council timed out after 600s."
+    except Exception as e:
+        logger.error("council_verify failed: %s", e)
+        return f"Council call failed: {e}"
 
 
 # Dispatch map for tool execution
