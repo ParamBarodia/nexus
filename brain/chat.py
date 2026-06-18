@@ -17,6 +17,28 @@ from brain.skills_loader import match_skill
 logger = logging.getLogger("jarvis.chat")
 
 
+def _persist_memory_async(user_msg: str, assistant_msg: str) -> None:
+    """Save the turn to memory in a BACKGROUND thread.
+
+    Mem0's add() runs an LLM fact-extraction pass (~10-20s locally); doing it inline
+    blocks the response. Backgrounding it makes replies return immediately.
+    """
+    import threading
+
+    def _work():
+        try:
+            # Lightweight raw storage (no LLM extraction) so it doesn't hog the local model.
+            from brain.memory_mem0 import add_memory as _raw_add
+            _raw_add(user_msg, "user")
+            _raw_add(assistant_msg, "assistant")
+            log_backup("user", user_msg)
+            log_backup("assistant", assistant_msg)
+        except Exception as e:
+            logger.error("Async memory persist failed: %s", e)
+
+    threading.Thread(target=_work, daemon=True).start()
+
+
 def _needs_tools(message: str) -> bool:
     """Check if a message likely needs tool access (auto-derived from registered MCP tools)."""
     lower = message.lower()
@@ -121,12 +143,17 @@ async def stream_chat(user_message: str, force_tier: int = None) -> AsyncIterato
 
             async for chunk in _run_ollama_chat(model_cfg.model_name, messages, tools, user_message):
                 if chunk["type"] == "_save":
-                    add_memory_enhanced(chunk["user"], "user",
-                                        user_msg=chunk["user"], assistant_msg=chunk["assistant"])
-                    add_memory_enhanced(chunk["assistant"], "assistant",
-                                        user_msg=chunk["user"], assistant_msg=chunk["assistant"])
-                    log_backup("user", chunk["user"])
-                    log_backup("assistant", chunk["assistant"])
+                    _persist_memory_async(chunk["user"], chunk["assistant"])
+                else:
+                    yield chunk
+
+        elif model_cfg.provider == "openrouter":
+            # Free smart tier — give it tools (web_search etc.); auto-falls back to local.
+            from brain.openrouter_executor import run_openrouter_advisor
+            or_tools = mcp.get_tool_definitions()
+            async for chunk in run_openrouter_advisor(user_message, system_prompt, memories, or_tools):
+                if chunk["type"] == "_save":
+                    _persist_memory_async(chunk["user"], chunk["assistant"])
                 else:
                     yield chunk
 

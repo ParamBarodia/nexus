@@ -45,14 +45,27 @@ def _get_ambient_monitor():
 
 
 def notify(message: str, title: str = "Nexus Briefing"):
-    """Send notification via Apprise (ntfy.sh by default)."""
-    topic = os.getenv("NTFY_TOPIC", "nexus-param")
-    apobj = apprise.Apprise()
-    apobj.add(f"ntfy://{topic}")
-    apobj.notify(
-        body=message,
-        title=title,
-    )
+    """Send a VISIBLE Windows desktop toast (plyer + PowerShell WinRT fallback).
+
+    Optionally also relays to ntfy if NTFY_TOPIC is explicitly set (phone push).
+    """
+    # Primary: desktop toast — what the user actually sees on screen.
+    try:
+        from brain.capabilities.windows_notify import _windows_notify
+        _windows_notify(title=title, message=message[:250], timeout=8)
+    except Exception as e:
+        p_logger.error("Windows toast failed: %s", e)
+
+    # Optional: also push to phone via ntfy only if the user configured a topic.
+    topic = os.getenv("NTFY_TOPIC", "")
+    if topic:
+        try:
+            apobj = apprise.Apprise()
+            apobj.add(f"ntfy://{topic}")
+            apobj.notify(body=message, title=title)
+        except Exception as e:
+            p_logger.error("ntfy relay failed: %s", e)
+
     p_logger.info("Notification sent: %s", title)
 
 
@@ -151,7 +164,44 @@ async def weekly_export():
         p_logger.error("Weekly export failed: %s", e)
 
 
+import time as _time
+_last_idle_nudge = 0.0
+
+
+def _on_idle(event):
+    """On user_idle, gently surface the top overdue action as a toast (throttled ~3h)."""
+    global _last_idle_nudge
+    if getattr(event, "event_type", None) != "user_idle":
+        return
+    now = _time.monotonic()
+    if now - _last_idle_nudge < 3 * 3600:  # at most once per 3 hours
+        return
+    try:
+        from brain.domains import overdue_domains
+        overdue = overdue_domains()
+        if overdue:
+            v = next(iter(overdue.values()))
+            notify(
+                f"{v['label']}: {v['next_action']} — overdue {v['days_overdue']}d. Shall I help, Sir?",
+                "Nexus — a moment, Sir?",
+            )
+            _last_idle_nudge = now
+    except Exception as e:
+        p_logger.error("Idle nudge failed: %s", e)
+
+
+def register_proactive_listeners():
+    """Wire built-in proactive behaviours to the event bus (e.g. idle check-in)."""
+    try:
+        from brain.events import bus
+        bus.subscribe_all(_on_idle)
+        logger.info("Proactive idle listener registered.")
+    except Exception as e:
+        logger.error("Failed to register proactive listeners: %s", e)
+
+
 def start_scheduler():
+    register_proactive_listeners()
     # 7:30 AM — prefetch connectors + compose briefing via LLM
     scheduler.add_job(prefetch_and_brief, 'cron', hour=7, minute=30)
     # 8:00 AM — send the composed briefing as notification
@@ -160,6 +210,8 @@ def start_scheduler():
     scheduler.add_job(evening_reflection, 'cron', hour=21, minute=0)
     # Every 15 minutes — ambient awareness check
     scheduler.add_job(ambient_check, 'interval', minutes=15)
+    # 9 AM / 1 PM / 5 PM — nudge about overdue life-domain actions (desktop toast)
+    scheduler.add_job(domains_check, 'cron', hour='9,13,17', minute=0)
     # 3:00 AM — daily backup
     scheduler.add_job(daily_backup, 'cron', hour=3, minute=0)
     # Sunday midnight — weekly export

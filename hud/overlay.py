@@ -129,6 +129,8 @@ class DataFetcher(QObject):
         if cn: r["connectors"] = cn; r["n_active"] = len([c for c in cn if c["status"]=="active"]); r["n_total"] = len(cn)
         b = _get("/briefing/today")
         if b and b.get("briefing"): r["briefing"] = b["briefing"]
+        dm = _get("/api/domains")
+        if dm and dm.get("domains"): r["domains"] = dm["domains"]
         cr = _post("/connectors/crypto/fetch")
         if cr and "prices" in cr: r["crypto"] = cr["prices"]
         hn = _post("/connectors/hackernews/fetch")
@@ -232,6 +234,11 @@ class NexusHUD(QWidget):
         self.proj_lbl = proj_panel.add(QLabel("...")); self.proj_lbl.setFont(_font(9))
         self.proj_lbl.setStyleSheet(f"color:{TEXT};"); self.proj_lbl.setWordWrap(True)
         left.addWidget(proj_panel)
+
+        nextaction_panel = Panel("NEXT ACTION")
+        self.nextaction_lbl = nextaction_panel.add(QLabel("...")); self.nextaction_lbl.setFont(_font(9))
+        self.nextaction_lbl.setStyleSheet(f"color:{TEXT};"); self.nextaction_lbl.setWordWrap(True)
+        left.addWidget(nextaction_panel)
 
         news_panel = Panel("NEWS")
         self.news_lbl = news_panel.add(QLabel("Loading...")); self.news_lbl.setFont(_font(9))
@@ -437,6 +444,18 @@ class NexusHUD(QWidget):
 
         br = d.get("briefing", "")
         if br: self.brief_lbl.setText(br[:350] + ("..." if len(br) > 350 else ""))
+
+        dm = d.get("domains")
+        if dm:
+            items = list(dm.values())
+            overdue = [v for v in items if v.get("overdue")]
+            show = overdue[:2] if overdue else items[:3]
+            lines = []
+            for v in show:
+                tag = (f' <span style="color:{RED}">OVERDUE {v.get("days_overdue",0)}d</span>'
+                       if v.get("overdue") else "")
+                lines.append(f'<b>{v.get("label","")}</b>: {v.get("next_action","")}{tag}')
+            self.nextaction_lbl.setText("<br>".join(lines))
 
     # ---- Chat ----
     def _on_cmd(self):

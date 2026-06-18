@@ -23,6 +23,12 @@ TIER3_CLOUD_ENABLED = os.getenv("TIER3_CLOUD_ENABLED", "false").lower() == "true
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 TIER3_MODE = os.getenv("TIER3_MODE", "ask_user")
 
+# Free "smart tier" via OpenRouter (free models only; $0). Used for hard/conversational
+# Tier-3 queries when enabled; falls back to the local Tier-3 model if unavailable.
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+TIER3_OPENROUTER_ENABLED = os.getenv("TIER3_OPENROUTER_ENABLED", "false").lower() == "true"
+OPENROUTER_MODEL = os.getenv("TIER3_OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+
 def get_model_for_tier(tier: int, preference: Optional[str] = None) -> ModelConfig:
     """Return model config for a given tier."""
     if tier == 1:
@@ -32,7 +38,11 @@ def get_model_for_tier(tier: int, preference: Optional[str] = None) -> ModelConf
     elif tier == 3:
         if preference == "local":
             return ModelConfig(tier=3, model_name=TIER3_LOCAL_MODEL, provider="ollama")
-        if TIER3_CLOUD_ENABLED and ANTHROPIC_API_KEY and preference != "local":
+        # Prefer the FREE OpenRouter smart model when enabled (no cost).
+        if TIER3_OPENROUTER_ENABLED and OPENROUTER_API_KEY:
+            return ModelConfig(tier=3, model_name=OPENROUTER_MODEL, provider="openrouter")
+        # Optional paid Anthropic path (off by default).
+        if TIER3_CLOUD_ENABLED and ANTHROPIC_API_KEY:
             return ModelConfig(tier=3, model_name=os.getenv("TIER3_CLOUD_MODEL", "claude-sonnet-4-6"), provider="anthropic")
         return ModelConfig(tier=3, model_name=TIER3_LOCAL_MODEL, provider="ollama")
     

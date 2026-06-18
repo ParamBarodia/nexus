@@ -70,7 +70,10 @@ def add_memory(message: str, role: str):
     if mem is None:
         return
     try:
-        mem.add(message, user_id=USER_ID, metadata={"role": role})
+        # infer=False stores the raw turn via embeddings WITHOUT an LLM fact-extraction
+        # pass. Extraction hammers the local model and serializes behind chat requests,
+        # making every turn slow. Raw storage still gives semantic recall on search.
+        mem.add(message, user_id=USER_ID, metadata={"role": role}, infer=False)
         mem_logger.info("Memory added from %s: %s", role, message[:100])
     except Exception as e:
         mem_logger.error("Failed to add memory: %s", e)

@@ -20,24 +20,38 @@ class RoutingDecision(TypedDict):
     reason: str
 
 ROUTER_PROMPT = """Classify the following user message into one of three tiers:
-Tier 1: Reflex (chat, simple memory recall, single tool call like time, mode change)
+Tier 1: Reflex (short chat, simple personal recall about the user, single tool like time/mode)
 Tier 2: Executor (multi-step tools, code generation, file operations, structured tasks)
-Tier 3: Advisor (complex planning, hard reasoning, debugging, architecture, deep work)
+Tier 3: Smart/Advisor (complex reasoning, planning, debugging, architecture; general-knowledge or
+        world questions; explanations; "why/how" reasoning; anything needing current/web info;
+        conversational depth)
 
 Rules:
-- Default to Tier 1 unless executor/advisor capabilities are clearly needed.
-- If user message mentions reading, writing, or listing files, MUST use Tier 2.
-- If user message mentions "think harder", "use advisor", or "deep work", MUST use Tier 3.
+- Default to Tier 1 for short chat or personal recall like "what is my X".
+- If the message mentions reading, writing, or listing files, MUST use Tier 2.
+- General-knowledge/world questions, explanations, "why/how" reasoning, or anything needing
+  current or web information -> Tier 3.
+- If the message mentions "think harder", "use advisor", or "deep work", MUST use Tier 3.
 - Output ONLY valid JSON: {{"tier": 1|2|3, "confidence": 0.0-1.0, "reason": "string"}}
 
 User Message: {message}"""
 
+# Fast-path keywords that signal a hard/conversational/general-knowledge query -> smart tier.
+SMART_KEYWORDS = [
+    "think harder", "use advisor", "deep work", "explain", "how does", "how do i",
+    "compare", "analyze", "analyse", "strategy", "architect", "design a", "deep dive",
+    "in depth", "pros and cons", "why is", "why does", "latest", "search the web",
+    "what's new", "current state", "research ",
+]
+
+
 def classify_message(message: str) -> RoutingDecision:
     """Uses the Tier 1 model to decide which tier should handle the message."""
-    # Force tier 3 if keywords present
     lower_msg = message.lower()
-    if any(kw in lower_msg for kw in ["think harder", "use advisor", "deep work"]):
-        decision = {"tier": 3, "confidence": 1.0, "reason": "User explicitly requested advisor tier."}
+    # Personal recall ("what is my ...") stays local/fast — don't send to the smart tier.
+    is_personal = lower_msg.startswith(("what is my", "what's my", "what are my", "who is my"))
+    if not is_personal and any(kw in lower_msg for kw in SMART_KEYWORDS):
+        decision = {"tier": 3, "confidence": 0.9, "reason": "Complex/conversational query -> smart tier."}
         router_logger.info("Decision: %s | Message: %s", json.dumps(decision), message[:100])
         return decision
 
