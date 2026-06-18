@@ -149,42 +149,109 @@ def append_summary(pid: str | None, text: str) -> None:
     _save(d)
 
 
-def work_research(query: str, pid: str | None = None) -> dict:
-    """Delegate a research task to Hermes (it spawns parallel subagents), append findings.
+def _synthesize(prompt: str) -> str:
+    """Synthesize text using the FREE smart tier (OpenRouter), falling back to local.
 
-    Slow (subagent spawn + local model). Call this from a background thread for the UI.
+    Runs synchronously — only ever called from a background research thread, never on
+    the event loop. Prefers free cloud (no GPU cost, better quality) and falls back to
+    the local Tier-3 model directly (no flaky Hermes subprocess).
     """
-    from brain.tools import call_hermes
+    from brain.models import (OPENROUTER_API_KEY, OPENROUTER_MODEL,
+                              TIER3_OPENROUTER_ENABLED, TIER3_LOCAL_MODEL)
+
+    # 1) Free OpenRouter smart tier (zero GPU, frontier-ish quality).
+    if TIER3_OPENROUTER_ENABLED and OPENROUTER_API_KEY:
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=OPENROUTER_API_KEY,
+                            base_url="https://openrouter.ai/api/v1",
+                            max_retries=0, timeout=60)
+            for model in [OPENROUTER_MODEL, "openai/gpt-oss-120b:free"]:
+                try:
+                    r = client.chat.completions.create(
+                        model=model, messages=[{"role": "user", "content": prompt}])
+                    txt = (r.choices[0].message.content or "").strip()
+                    if txt:
+                        return txt
+                except Exception as e:
+                    logger.warning("Synthesis model %s unavailable: %s", model, e)
+                    continue
+        except Exception as e:
+            logger.warning("OpenRouter synthesis unavailable: %s", e)
+
+    # 2) Local fallback — direct Ollama (no Hermes subprocess).
+    try:
+        import ollama
+        r = ollama.chat(model=TIER3_LOCAL_MODEL,
+                        messages=[{"role": "user", "content": prompt}])
+        return (r.get("message", {}).get("content", "") or "").strip()
+    except Exception as e:
+        logger.error("Local synthesis failed: %s", e)
+        return f"(synthesis unavailable: {e})"
+
+
+def work_research(query: str, pid: str | None = None) -> dict:
+    """Research a query: gather real web evidence, then synthesize with the smart tier.
+
+    Pipeline = free web search (DDG/Tavily) -> free smart-tier synthesis. Costs $0 and no
+    GPU. Slow-ish (network); call from a background thread for the UI. (Hermes remains
+    available via its own tool/CLI for tasks needing its 40+ autonomous tools.)
+    """
+    from brain.mcp_client import mcp
     rid = _resolve(pid)
     if not rid:
         return {"error": "No active work project. Start one first with work_start."}
     topic = get_project(rid)["topic"]
+
+    # 1) Gather real web evidence across a few angles (free backend).
+    angles = [query,
+              f"{topic} state of the art recent advances",
+              f"{topic} open problems limitations challenges"]
+    snippets, source_lines = [], []
+    for q in angles:
+        try:
+            res = str(mcp.call_tool("web_search", {"query": q}))
+            if res and "Error" not in res[:20]:
+                snippets.append(f"### Results for: {q}\n{res[:2000]}")
+                source_lines.append(res)
+        except Exception as e:
+            logger.warning("web_search failed for %r: %s", q, e)
+    evidence = "\n\n".join(snippets) or "(no web results retrieved)"
+
+    # 2) Synthesize concrete SUMMARY / SOURCES / GAPS from the evidence.
     prompt = (
-        f"You are a research sub-agent for the project: '{topic}'.\n"
-        f"Research this query thoroughly: {query}\n\n"
-        f"Delegate to 2-3 parallel subagents to cover different angles, search the web, then "
-        f"synthesize. Return EXACTLY three sections:\n"
-        f"SUMMARY: a concise synthesis of what was found.\n"
-        f"SOURCES: a short list of titles + URLs.\n"
-        f"GAPS: the top 3 open questions / missing data / things to verify next.\n"
-        f"Be concrete and brief."
+        f"You are a sharp research analyst for the project: '{topic}'.\n"
+        f"Using the web search results below, answer this query: {query}\n\n"
+        f"{evidence}\n\n"
+        f"Return EXACTLY three sections, concrete and brief (no preamble):\n"
+        f"SUMMARY: 4-8 sentences on the current state and what is practically possible.\n"
+        f"SOURCES: bullet list of the most relevant titles + URLs from the results.\n"
+        f"GAPS: the top 3-5 open questions / missing data / things to verify next."
     )
-    result = call_hermes(prompt)
+    result = _synthesize(prompt)
     append_summary(rid, f"Research on '{query}':\n{result}")
 
-    # Light gap extraction: capture bullet lines in/after a GAPS section.
+    # Light gap extraction: capture bullet lines under a GAPS section. Section headers
+    # may be markdown-styled ("**GAPS**", "## GAPS:", "GAPS:"), so normalise first.
     in_gaps = False
     for line in result.splitlines():
-        up = line.upper()
-        if "GAP" in up and (":" in line or up.strip() == "GAPS"):
+        norm = line.strip().strip("*#").strip().rstrip(":").upper()
+        if norm.startswith("GAP"):
             in_gaps = True
             continue
         if in_gaps:
-            l = line.strip(" -*\t•")
+            if norm.startswith("SUMMARY") or norm.startswith("SOURCE"):
+                in_gaps = False  # left the GAPS section
+                continue
+            l = line.strip(" -*\t•#0123456789.")
             if l and len(l) > 8:
                 append_gap(rid, l[:200])
-            elif not line.strip():
-                in_gaps = False
+
+    # Record any URLs the synthesis cited as sources.
+    import re
+    for url in re.findall(r"https?://[^\s)\]]+", result):
+        append_source(rid, {"url": url[:300], "date": date.today().isoformat()})
+
     return {"ok": True, "project": rid, "result": result[:2000]}
 
 
