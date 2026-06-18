@@ -1,9 +1,11 @@
 """Nexus chat engine: routing, memory, and multi-tier execution."""
 
+import asyncio
 import json
 import logging
+import threading
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, Callable, Iterable
 
 import ollama
 from brain.memory import append as log_backup
@@ -45,61 +47,111 @@ def _needs_tools(message: str) -> bool:
     return any(name.replace("_", " ") in lower for name in mcp.tools.keys())
 
 
+_BRIDGE_DONE = object()
+
+
+async def _aiter_blocking(make_gen: Callable[[], Iterable[Any]]) -> AsyncIterator[Any]:
+    """Drive a BLOCKING (synchronous) generator from a worker thread and yield its
+    items to the async caller WITHOUT blocking the event loop.
+
+    Ollama's streaming response is a synchronous generator; iterating it inline inside
+    an async function freezes uvicorn's single event loop on every token. We run the
+    iteration in a thread and hand tokens back through an asyncio.Queue.
+    """
+    loop = asyncio.get_running_loop()
+    q: asyncio.Queue = asyncio.Queue(maxsize=256)
+
+    def _producer():
+        try:
+            for item in make_gen():
+                loop.call_soon_threadsafe(q.put_nowait, ("item", item))
+        except Exception as e:  # surface the error to the consumer
+            loop.call_soon_threadsafe(q.put_nowait, ("error", e))
+        finally:
+            loop.call_soon_threadsafe(q.put_nowait, ("done", _BRIDGE_DONE))
+
+    threading.Thread(target=_producer, daemon=True).start()
+
+    while True:
+        kind, payload = await q.get()
+        if kind == "done":
+            break
+        if kind == "error":
+            raise payload
+        yield payload
+
+
+async def _stream_reply(model_name: str, messages: list,
+                        user_message: str) -> AsyncIterator[dict[str, Any]]:
+    """Stream a plain (no-tool) reply through the thread->queue bridge."""
+    full_text = ""
+    async for chunk in _aiter_blocking(
+        lambda: ollama.chat(model=model_name, messages=messages, stream=True)
+    ):
+        token = chunk.get("message", {}).get("content", "")
+        if token:
+            full_text += token
+            yield {"type": "token", "content": token}
+    if full_text:
+        yield {"type": "_save", "user": user_message, "assistant": full_text}
+
+
 async def _run_ollama_chat(model_name: str, messages: list, tools: list | None,
                            user_message: str) -> AsyncIterator[dict[str, Any]]:
-    """Execute an Ollama chat with optional tools and streaming follow-up."""
+    """Execute an Ollama chat with optional tools and streaming follow-up.
+
+    All blocking Ollama / tool calls run in worker threads so the event loop stays
+    responsive (the dashboard and other requests don't freeze during generation).
+    """
+    # Fast path: no tools requested -> stream directly. (Previously this still ran a
+    # wasteful non-streaming generation first, doubling latency for every reply.)
+    if not tools:
+        async for chunk in _stream_reply(model_name, messages, user_message):
+            yield chunk
+        return
+
+    # Tools path: one non-streaming probe to see whether the model wants a tool.
     try:
-        response = ollama.chat(
-            model=model_name,
-            messages=messages,
-            tools=tools,
-            stream=False,
+        response = await asyncio.to_thread(
+            lambda: ollama.chat(model=model_name, messages=messages, tools=tools, stream=False)
         )
     except Exception as e:
-        # Some models (e.g. gemma3) don't support tool calling — degrade gracefully.
-        if tools and "does not support tools" in str(e).lower():
-            logger.warning("%s lacks tool support; retrying without tools.", model_name)
-            tools = None
-            response = ollama.chat(model=model_name, messages=messages, tools=None, stream=False)
-        else:
-            raise
+        # Some models (e.g. gemma3) don't support tool calling — degrade gracefully
+        # by streaming a normal reply instead.
+        if "does not support tools" in str(e).lower():
+            logger.warning("%s lacks tool support; streaming without tools.", model_name)
+            async for chunk in _stream_reply(model_name, messages, user_message):
+                yield chunk
+            return
+        raise
 
     message = response.get("message", {})
     tool_calls = message.get("tool_calls", None)
 
-    if tool_calls:
-        messages.append(message)
-        for tc in tool_calls:
-            func = tc.get("function", {})
-            name = func.get("name")
-            args = func.get("arguments", {})
+    if not tool_calls:
+        # No tool needed — the probe already produced the full reply; emit it directly
+        # instead of regenerating the whole thing a second time.
+        text = message.get("content", "")
+        if text:
+            yield {"type": "token", "content": text}
+            yield {"type": "_save", "user": user_message, "assistant": text}
+        return
 
-            yield {"type": "tool_call", "tool": name, "args": args}
-            result = mcp.call_tool(name, args)
-            yield {"type": "tool_result", "tool": name, "result": result}
-            messages.append({"role": "tool", "content": result})
+    # The model wants tools — run them, then stream the follow-up answer.
+    messages.append(message)
+    for tc in tool_calls:
+        func = tc.get("function", {})
+        name = func.get("name")
+        args = func.get("arguments", {})
 
-        # Stream follow-up after tool results
-        full_text = ""
-        for chunk in ollama.chat(model=model_name, messages=messages, stream=True):
-            token = chunk.get("message", {}).get("content", "")
-            if token:
-                full_text += token
-                yield {"type": "token", "content": token}
+        yield {"type": "tool_call", "tool": name, "args": args}
+        # Tool handlers may themselves block (subprocess, network) — off-thread it.
+        result = await asyncio.to_thread(mcp.call_tool, name, args)
+        yield {"type": "tool_result", "tool": name, "result": result}
+        messages.append({"role": "tool", "content": result})
 
-        if full_text:
-            yield {"type": "_save", "user": user_message, "assistant": full_text}
-    else:
-        # No tools triggered — stream directly
-        full_text = ""
-        for chunk in ollama.chat(model=model_name, messages=messages, stream=True):
-            token = chunk.get("message", {}).get("content", "")
-            if token:
-                full_text += token
-                yield {"type": "token", "content": token}
-
-        if full_text:
-            yield {"type": "_save", "user": user_message, "assistant": full_text}
+    async for chunk in _stream_reply(model_name, messages, user_message):
+        yield chunk
 
 
 async def stream_chat(user_message: str, force_tier: int = None) -> AsyncIterator[dict[str, Any]]:
@@ -163,8 +215,9 @@ async def stream_chat(user_message: str, force_tier: int = None) -> AsyncIterato
     logger.info("Routing: Tier %d (%s)", tier, model_cfg.model_name)
 
     # 2. Context Building (Enhanced Memory + Skills Inject)
-    memories = get_memories_weighted(user_message)
-    system_prompt = build_system_prompt()
+    # Memory search hits embeddings / Mem0 and can be slow — keep it off the event loop.
+    memories = await asyncio.to_thread(get_memories_weighted, user_message)
+    system_prompt = await asyncio.to_thread(build_system_prompt)
 
     # Skills: check if message triggers a skill, inject its prompt
     skill = match_skill(user_message)

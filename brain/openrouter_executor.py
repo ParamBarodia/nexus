@@ -9,6 +9,7 @@ $0 (free models only). Free models are aggressively rate-limited, so this:
 So it never costs a penny and never hangs/breaks.
 """
 
+import asyncio
 import time
 import logging
 from collections.abc import AsyncIterator
@@ -67,10 +68,13 @@ async def run_openrouter_advisor(user_message: str, system_prompt: str,
         {"role": "user", "content": user_message},
     ]
 
+    from brain.chat import _aiter_blocking  # thread->queue bridge (keeps the loop free)
+
     # Web search by injection (reliable across all models) when the query needs current info.
     if any(h in user_message.lower() for h in WEB_HINTS):
         try:
-            results = mcp.call_tool("web_search", {"query": user_message})
+            # Blocking network call — off-thread it so the event loop stays responsive.
+            results = await asyncio.to_thread(mcp.call_tool, "web_search", {"query": user_message})
             yield {"type": "tool_call", "tool": "web_search", "args": {"query": user_message}}
             yield {"type": "tool_result", "tool": "web_search", "result": str(results)[:200]}
             messages.insert(1, {"role": "system",
@@ -83,8 +87,10 @@ async def run_openrouter_advisor(user_message: str, system_prompt: str,
     for model in candidates:
         try:
             full_text = ""
-            for chunk in client.chat.completions.create(
-                model=model, messages=messages, stream=True,
+            # The OpenAI SDK's streaming response is a BLOCKING generator; drive it from a
+            # worker thread via the bridge so tokens don't freeze uvicorn's event loop.
+            async for chunk in _aiter_blocking(
+                lambda m=model: client.chat.completions.create(model=m, messages=messages, stream=True)
             ):
                 tok = (chunk.choices[0].delta.content or "") if chunk.choices else ""
                 if tok:

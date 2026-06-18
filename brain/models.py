@@ -17,7 +17,10 @@ class ModelConfig(BaseModel):
     provider: str  # "ollama" or "anthropic"
 
 TIER1_MODEL = os.getenv("TIER1_MODEL", "llama3.2:3b")
-TIER2_MODEL = os.getenv("TIER2_MODEL", "gemma3:4b")
+# Tier 2 is the executor (tools + code). It MUST be a tool-capable model — gemma3:4b
+# returns 400 "does not support tools", so it can't drive the tool loop. llama3.2:3b
+# and hermes3:8b are the tool-capable local models; default to the fast one.
+TIER2_MODEL = os.getenv("TIER2_MODEL", "llama3.2:3b")
 TIER3_LOCAL_MODEL = os.getenv("TIER3_LOCAL_MODEL", "hermes3:8b")
 TIER3_CLOUD_ENABLED = os.getenv("TIER3_CLOUD_ENABLED", "false").lower() == "true"
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
