@@ -48,12 +48,21 @@ def _needs_tools(message: str) -> bool:
 async def _run_ollama_chat(model_name: str, messages: list, tools: list | None,
                            user_message: str) -> AsyncIterator[dict[str, Any]]:
     """Execute an Ollama chat with optional tools and streaming follow-up."""
-    response = ollama.chat(
-        model=model_name,
-        messages=messages,
-        tools=tools,
-        stream=False,
-    )
+    try:
+        response = ollama.chat(
+            model=model_name,
+            messages=messages,
+            tools=tools,
+            stream=False,
+        )
+    except Exception as e:
+        # Some models (e.g. gemma3) don't support tool calling — degrade gracefully.
+        if tools and "does not support tools" in str(e).lower():
+            logger.warning("%s lacks tool support; retrying without tools.", model_name)
+            tools = None
+            response = ollama.chat(model=model_name, messages=messages, tools=None, stream=False)
+        else:
+            raise
 
     message = response.get("message", {})
     tool_calls = message.get("tool_calls", None)
@@ -96,9 +105,48 @@ async def _run_ollama_chat(model_name: str, messages: list, tools: list | None,
 async def stream_chat(user_message: str, force_tier: int = None) -> AsyncIterator[dict[str, Any]]:
     """Nexus chat flow: Router -> Tier -> Tools -> Mem0."""
 
+    # 0. Work-agent intent: "work on X" deterministically starts/resumes a work project,
+    #    so it doesn't depend on a small model reliably calling the tool.
+    _work_intercept = False
+    _wl = user_message.lower().strip()
+    for _pre in ("i want to work on ", "let's work on ", "lets work on ",
+                 "start working on ", "work on ", "research project on "):
+        if _wl.startswith(_pre):
+            _work_intercept = True
+            topic = user_message.strip()[len(_pre):].strip(" .?!")
+            if topic:
+                try:
+                    from brain.work_agents import work_start, update
+                    work_start(topic)
+                    update(None, next_action=f"Reviewing initial research on {topic}")
+                    # Autonomously kick off initial research immediately (background) so the
+                    # agent starts driving toward output, not waiting passively.
+                    import threading
+
+                    def _auto(_t=topic):
+                        try:
+                            from brain.work_agents import work_research
+                            work_research(
+                                f"Give an overview of {_t}: the key sub-problems, the current "
+                                f"state of the art, what is practically possible, and the main open "
+                                f"gaps / unknowns to investigate next."
+                            )
+                            from brain.proactive import notify
+                            notify(f"Initial research is in for: {_t}", "Nexus — work agent")
+                        except Exception as ex:
+                            logger.error("Auto research failed: %s", ex)
+
+                    threading.Thread(target=_auto, daemon=True).start()
+                except Exception as e:
+                    logger.error("work_start intent failed: %s", e)
+            break
+
     # 1. Routing
     if force_tier:
         decision = {"tier": force_tier, "confidence": 1.0, "reason": "Explicitly requested by user."}
+    elif _work_intercept:
+        # Project + context already created; reply fast (local, no slow tools) as the work agent.
+        decision = {"tier": 1, "confidence": 1.0, "reason": "Work-agent acknowledgment."}
     else:
         decision = classify_message(user_message)
 

@@ -407,6 +407,45 @@ async def api_briefing():
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
+@app.get("/api/work")
+async def api_work():
+    """Active work project + list, for the dashboard WORK panel."""
+    try:
+        import brain.work_agents as wa
+        return {"ok": True, "active": wa.get_active(), "projects": wa.list_projects()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+@app.post("/work/start")
+async def work_start_ep(req: dict, _=Depends(verify_token)):
+    import brain.work_agents as wa
+    return {"ok": True, "project": wa.work_start(req["topic"], req.get("goal", ""))}
+
+@app.post("/work/research")
+async def work_research_ep(req: dict, _=Depends(verify_token)):
+    """Kick off research in the background; returns immediately."""
+    import threading, brain.work_agents as wa
+    q = req["query"]
+    def _job():
+        try:
+            wa.work_research(q)
+            import brain.proactive as proactive
+            proactive.notify(f"Findings folded in: {q[:60]}", "Nexus — research done")
+        except Exception:
+            pass
+    threading.Thread(target=_job, daemon=True).start()
+    return {"ok": True, "started": q}
+
+@app.get("/work/status")
+async def work_status_ep(project_id: str = None, _=Depends(verify_token)):
+    import brain.work_agents as wa
+    return {"ok": True, "status": wa.status_text(project_id)}
+
+@app.post("/work/close")
+async def work_close_ep(req: dict, _=Depends(verify_token)):
+    import brain.work_agents as wa
+    return wa.work_close(req.get("project_id"))
+
 @app.get("/api/domains")
 async def api_domains():
     """Live life-domain state (next action + staleness/overdue) for the dashboard cards."""

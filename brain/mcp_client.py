@@ -165,6 +165,67 @@ class MCPManager:
                 update_domain(domain, next_action, deadline, notes, status)),
         }
 
+        # Persistent WORK AGENTS — dedicated per-topic research/ideation projects.
+        import brain.work_agents as wa
+
+        def _work_start(topic, goal=""):
+            p = wa.work_start(topic, goal)
+            return f"Work project '{p['topic']}' is active, Sir. Next: {p['next_action']}"
+
+        def _work_research_bg(query):
+            import threading
+            def _job():
+                try:
+                    wa.work_research(query)
+                    from brain.proactive import notify
+                    notify(f"Findings folded into the project: {query[:60]}", "Nexus — research done")
+                except Exception as e:
+                    logger.error("Background research failed: %s", e)
+            threading.Thread(target=_job, daemon=True).start()
+            return (f"Research on '{query}' started — delegating to Hermes subagents. I'll fold the "
+                    f"findings into the work project and notify you when done, Sir.")
+
+        self.tools["work_start"] = {
+            "name": "work_start",
+            "description": "Start (or resume) a persistent work project on a topic. Use when the user says they want to work on / research / dig into something.",
+            "parameters": {"type": "object", "properties": {
+                "topic": {"type": "string"}, "goal": {"type": "string"}}, "required": ["topic"]},
+            "handler": _work_start,
+        }
+        self.tools["work_research"] = {
+            "name": "work_research",
+            "description": "Delegate a web-research task to Hermes (spawns parallel subagents); findings are folded into the active work project. Runs in the background.",
+            "parameters": {"type": "object", "properties": {
+                "query": {"type": "string"}}, "required": ["query"]},
+            "handler": lambda query: _work_research_bg(query),
+        }
+        self.tools["work_status"] = {
+            "name": "work_status",
+            "description": "Show the active work project: summary, gaps, ideas, plan, next action.",
+            "parameters": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": []},
+            "handler": lambda project_id=None: wa.status_text(project_id),
+        }
+        self.tools["work_idea"] = {
+            "name": "work_idea",
+            "description": "Record an idea against the active work project.",
+            "parameters": {"type": "object", "properties": {"idea": {"type": "string"}}, "required": ["idea"]},
+            "handler": lambda idea: ("Noted, Sir." if wa.append_idea(None, idea) else "No active project."),
+        }
+        self.tools["work_plan"] = {
+            "name": "work_plan",
+            "description": "Set or update the plan / next action for the active work project.",
+            "parameters": {"type": "object", "properties": {
+                "plan": {"type": "string"}, "next_action": {"type": "string"}}, "required": []},
+            "handler": lambda plan=None, next_action=None: (
+                "Updated, Sir." if "error" not in wa.update(None, plan=plan, next_action=next_action) else "No active project."),
+        }
+        self.tools["work_close"] = {
+            "name": "work_close",
+            "description": "Close/archive the active work project.",
+            "parameters": {"type": "object", "properties": {"project_id": {"type": "string"}}, "required": []},
+            "handler": lambda project_id=None: str(wa.work_close(project_id)),
+        }
+
         # Load India MCP Servers (will skip whatsapp_send stub since we already registered the real one)
         self._load_india_mcp()
 
@@ -217,6 +278,11 @@ class MCPManager:
                 self.tools[t["name"]] = t
                 logger.info("Registered external tool: %s", t["name"])
 
+    # Tools that BLOCK for a long time (spawn external agents) — excluded from the chat
+    # tool-list so a small model can't call them inline and freeze the event loop.
+    # They remain available via CLI (/hermes, /verify) and background endpoints.
+    CHAT_EXCLUDED = {"hermes_delegate", "council_verify"}
+
     def get_tool_definitions(self) -> List[Dict[str, Any]]:
         return [
             {
@@ -226,7 +292,7 @@ class MCPManager:
                     "description": t["description"],
                     "parameters": t["parameters"]
                 }
-            } for t in self.tools.values()
+            } for t in self.tools.values() if t["name"] not in self.CHAT_EXCLUDED
         ]
 
     def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:

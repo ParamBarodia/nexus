@@ -143,6 +143,20 @@ Today is {current_dt}.
     except Exception:
         pass
 
+    # Active WORK PROJECT — ideate WITH the accumulated research/gaps/plan.
+    try:
+        from brain.work_agents import active_context
+        wc = active_context()
+        if wc:
+            prompt += ("\n# ACTIVE WORK PROJECT — THIS IS THE USER'S CURRENT FOCUS RIGHT NOW.\n"
+                       "You are the dedicated work agent for it. Unless the user clearly changes the "
+                       "subject, treat ambiguous questions ('what's the next step?', 'what are the gaps?', "
+                       "'help me think this through') as being about THIS project — NOT the domains or "
+                       "job hunt above. Build on what we know, name the REAL gaps, say what is practically "
+                       "possible, and always end with the single next concrete step.\n" + wc + "\n")
+    except Exception:
+        pass
+
     # Self-awareness: Nexus knows its own architecture
     prompt += """
 # Self-Awareness — Your Own Architecture

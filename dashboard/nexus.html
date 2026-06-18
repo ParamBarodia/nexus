@@ -43,6 +43,18 @@
           padding:0 22px; font-weight:600; cursor:pointer; font-size:14px; }
   #send:hover { background:#5cc4ff; }
   .think { color:var(--warn); }
+  .workbox { max-width:900px; margin-top:18px; background:var(--panel); border:1px solid var(--line);
+             border-radius:12px; padding:16px; }
+  .workhead { font-size:14px; color:var(--accent); letter-spacing:.5px; margin-bottom:8px; }
+  .wtopic { color:var(--accent2); font-size:12.5px; letter-spacing:0; }
+  .wbody { font-size:12.5px; color:var(--text); line-height:1.55; white-space:pre-wrap;
+           max-height:180px; overflow-y:auto; margin-bottom:10px; color:var(--dim); }
+  .wbar { display:flex; gap:8px; }
+  #work-q { flex:1; background:var(--bg); border:1px solid var(--line); border-radius:8px;
+            padding:9px 12px; color:var(--text); font-size:13px; outline:none; }
+  #work-q:focus { border-color:var(--accent); }
+  #work-go { background:var(--accent2); color:#02121f; border:none; border-radius:8px;
+             padding:0 16px; font-weight:600; cursor:pointer; font-size:13px; }
 </style>
 </head>
 <body>
@@ -69,6 +81,15 @@
     <div class="card" data-key="content" data-q="What is my next action on content, and how do I start right now?">
       <h2>◆ Content <span class="badge" id="b-content"></span></h2>
       <p class="next" id="n-content">…</p><div class="meta" id="m-content"></div>
+    </div>
+  </div>
+
+  <div id="work" class="workbox">
+    <div class="workhead">◆ WORK AGENT <span id="work-topic" class="wtopic">— no active project</span></div>
+    <div id="work-body" class="wbody"></div>
+    <div class="wbar">
+      <input id="work-q" placeholder="Research the active project (or say 'work on X' in chat)…" autocomplete="off">
+      <button id="work-go">Research</button>
     </div>
   </div>
 
@@ -125,6 +146,40 @@ async function loadBriefing() {
   } catch {}
 }
 loadBriefing(); setInterval(loadBriefing, 300000);
+
+async function loadWork() {
+  try {
+    const r = await fetch('/api/work');
+    const d = await r.json();
+    const t = document.getElementById('work-topic');
+    const b = document.getElementById('work-body');
+    if (d.ok && d.active) {
+      const a = d.active;
+      t.textContent = '— ' + a.topic + ' (' + a.status + ')';
+      let s = 'Next: ' + (a.next_action || '—') + '\n';
+      if (a.summary) s += '\nWhat we know:\n' + a.summary.slice(-700) + '\n';
+      if (a.gaps && a.gaps.length) s += '\nGaps:\n' + a.gaps.slice(0,5).map(g=>'• '+g).join('\n') + '\n';
+      s += '\nSources: ' + (a.sources ? a.sources.length : 0);
+      b.textContent = s;
+    } else {
+      t.textContent = '— no active project';
+      b.textContent = "Say 'work on <topic>' in the chat to start a dedicated work agent.";
+    }
+  } catch {}
+}
+loadWork(); setInterval(loadWork, 30000);
+
+document.getElementById('work-go').addEventListener('click', async () => {
+  const q = document.getElementById('work-q').value.trim();
+  if (!q) return;
+  document.getElementById('work-body').textContent = 'Delegating research to Hermes subagents… (this runs in the background; findings will appear here)';
+  document.getElementById('work-q').value = '';
+  try { await fetch('/work/research', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({query:q})}); } catch {}
+  setTimeout(loadWork, 4000);
+});
+document.getElementById('work-q').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('work-go').click();
+});
 
 async function ask(q) {
   out.classList.add('show');
